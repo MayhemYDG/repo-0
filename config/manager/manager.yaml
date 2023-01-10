@@ -4,6 +4,12 @@ metadata:
   labels:
     control-plane: controller-manager
     admission.gatekeeper.sh/ignore: no-self-managing
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.24
   name: system
 ---
 apiVersion: apps/v1
@@ -22,8 +28,6 @@ spec:
   replicas: 3
   template:
     metadata:
-      annotations:
-        container.seccomp.security.alpha.kubernetes.io/manager: runtime/default
       labels:
         control-plane: controller-manager
         gatekeeper.sh/operation: webhook
@@ -51,7 +55,8 @@ spec:
             - "--exempt-namespace=gatekeeper-system"
             - "--operation=webhook"
             - "--operation=mutation-webhook"
-          image: openpolicyagent/gatekeeper:v3.7.0
+            - "--disable-opa-builtin={http.send}"
+          image: openpolicyagent/gatekeeper:v3.12.0-beta.0
           imagePullPolicy: Always
           name: manager
           ports:
@@ -62,22 +67,32 @@ spec:
               name: healthz
               protocol: TCP
           env:
+            # used by Gatekeeper
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            # used by Gatekeeper
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # used by stackdriver
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            # used by stackdriver
+            - name: CONTAINER_NAME
+              value: "manager"
           resources:
             limits:
-              cpu: 1000m
               memory: 512Mi
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
           livenessProbe:
             httpGet:
               path: /healthz
@@ -92,9 +107,11 @@ spec:
             runAsGroup: 999
             runAsNonRoot: true
             allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop:
-                - all
+                - ALL
       terminationGracePeriodSeconds: 60
       nodeSelector:
         kubernetes.io/os: linux
@@ -119,28 +136,40 @@ spec:
       labels:
         control-plane: audit-controller
         gatekeeper.sh/operation: audit
-      annotations:
-        container.seccomp.security.alpha.kubernetes.io/manager: runtime/default
     spec:
       automountServiceAccountToken: true
       containers:
         - args:
             - --operation=audit
             - --operation=status
+            - --operation=mutation-status
             - --logtostderr
+            - --disable-opa-builtin={http.send}
+            - --disable-cert-rotation
           command:
             - /manager
+          image: openpolicyagent/gatekeeper:v3.12.0-beta.0
           env:
+            # used by Gatekeeper
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            # used by Gatekeeper
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-          image: openpolicyagent/gatekeeper:v3.7.0
+            # used by stackdriver
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            # used by stackdriver
+            - name: CONTAINER_NAME
+              value: "manager"
           imagePullPolicy: Always
           livenessProbe:
             httpGet:
@@ -163,20 +192,21 @@ spec:
               port: 9090
           resources:
             limits:
-              cpu: 1000m
               memory: 512Mi
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
               drop:
-                - all
+                - ALL
             runAsGroup: 999
             runAsNonRoot: true
             runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
       serviceAccountName: gatekeeper-admin
       terminationGracePeriodSeconds: 60
       nodeSelector:
@@ -193,7 +223,7 @@ metadata:
   namespace: system
 spec:
   hard:
-    pods: 100
+    pods: "100"
   scopeSelector:
     matchExpressions:
     - operator: In

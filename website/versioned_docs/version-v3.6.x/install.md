@@ -7,7 +7,9 @@ title: Installation
 
 ### Minimum Kubernetes Version
 
-The minimum supported Kubernetes version of Gatekeeper is **n-4 of the latest stable Kubernetes release** per [Kubernetes Supported Versions policy](https://kubernetes.io/releases/version-skew-policy/). NOTE: Gatekeeper requires Kubernetes resources introduced in v1.16.
+The minimum supported Kubernetes version for Gatekeeper is aligned with the Kubernetes releases listed in the [Kubernetes Supported Versions policy](https://kubernetes.io/releases/version-skew-policy/). For more information, please see [supported Kubernetes versions](https://github.com/open-policy-agent/gatekeeper/blob/master/docs/Release_Management.md#supported-kubernetes-versions).
+
+**Note:** Gatekeeper requires resources introduced in Kubernetes v1.16.
 
 ### RBAC Permissions
 
@@ -89,7 +91,7 @@ You can alter the variables in `charts/gatekeeper/values.yaml` to customize your
 If you used a prebuilt image to deploy Gatekeeper, then you can delete all the Gatekeeper components with the following command:
 
   ```sh
-  kubectl delete -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.5/deploy/gatekeeper.yaml
+  kubectl delete -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.6/deploy/gatekeeper.yaml
   ```
 
 ### Using make

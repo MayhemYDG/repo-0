@@ -2,7 +2,6 @@ package regorewriter
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -40,7 +39,8 @@ type RegoRewriter struct {
 
 // New returns a new RegoRewriter
 // args:
-// 	pt - the PackageTransformer that will be used for updating the path
+//
+//	pt - the PackageTransformer that will be used for updating the path
 //	libs - a list of package prefixes that are allowed for library use
 //	externs - a list of packages that the rego is allowed to reference but not declared in any libs
 func New(pt PackageTransformer, libs []string, externs []string) (*RegoRewriter, error) {
@@ -61,12 +61,7 @@ func New(pt PackageTransformer, libs []string, externs []string) (*RegoRewriter,
 }
 
 // add is the internal method for parsing a module and entering it into the bookkeeping.
-func (r *RegoRewriter) add(path, src string, slice *[]*Module) error {
-	m, err := ast.ParseModule(path, src)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidModule, err)
-	}
-
+func (r *RegoRewriter) add(path string, m *ast.Module, slice *[]*Module) error {
 	r.addModule(path, m, slice)
 	return nil
 }
@@ -81,13 +76,13 @@ func (r *RegoRewriter) AddEntryPointModule(path string, m *ast.Module) {
 
 // AddEntryPoint adds a base source which will not have it's package path rewritten.  These correspond
 // to the rego that will be populated into a ConstraintTemplate with the 'violation' rule.
-func (r *RegoRewriter) AddEntryPoint(path, src string) error {
-	return r.add(path, src, &r.entryPoints)
+func (r *RegoRewriter) AddEntryPoint(path string, m *ast.Module) error {
+	return r.add(path, m, &r.entryPoints)
 }
 
 // AddLib adds a library source which will have the package path updated.
-func (r *RegoRewriter) AddLib(path, src string) error {
-	return r.add(path, src, &r.libs)
+func (r *RegoRewriter) AddLib(path string, m *ast.Module) error {
+	return r.add(path, m, &r.libs)
 }
 
 // addTestDir adds a test dir inside one of the provided paths.
@@ -105,7 +100,7 @@ func (r *RegoRewriter) addTestDir(testDirPath string) error {
 		}
 
 		glog.V(vLog).Infof("reading %s", path)
-		bytes, err := ioutil.ReadFile(path)
+		bytes, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrReadingFile, err)
 		}
@@ -124,20 +119,26 @@ func (r *RegoRewriter) addFileFromFs(path string, slice *[]*Module) error {
 		return fmt.Errorf("invalid file specified %s", path)
 	}
 
-	bytes, err := ioutil.ReadFile(path)
+	bytes, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrReadingFile, err)
 	}
-	return r.add(path, string(bytes), slice)
+
+	m, err := ast.ParseModule(path, string(bytes))
+	if err != nil {
+		return err
+	}
+
+	return r.add(path, m, slice)
 }
 
 // addPathFromFs adds a module from the local filesystem.
 // Loading from the filesystem is based on how "opa test" operates in terms of scoping.
-// 1. the 'test' directory must exist as a member of one of the paths passed to 'opa test'.
-// 2. the '.rego' source can exist anywhere in the subtree of the specified path
-// 3. any '.rego' loaded by "opa test" can reference any "test" data member that is loaded by
-//    opa test, for example, if "opa test foo/ bar/" is specified, a test in foo/ can see test data
-//    from bar/test/.
+//  1. the 'test' directory must exist as a member of one of the paths passed to 'opa test'.
+//  2. the '.rego' source can exist anywhere in the subtree of the specified path
+//  3. any '.rego' loaded by "opa test" can reference any "test" data member that is loaded by
+//     opa test, for example, if "opa test foo/ bar/" is specified, a test in foo/ can see test data
+//     from bar/test/.
 func (r *RegoRewriter) addPathFromFs(path string, slice *[]*Module) error {
 	fileStat, err := os.Stat(path)
 	if err != nil {
@@ -145,7 +146,7 @@ func (r *RegoRewriter) addPathFromFs(path string, slice *[]*Module) error {
 	}
 
 	if fileStat.IsDir() {
-		infos, err := ioutil.ReadDir(path)
+		infos, err := os.ReadDir(path)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrReadingFile, err)
 		}
@@ -279,7 +280,7 @@ func (r *RegoRewriter) checkImport(i *ast.Import) error {
 	}
 
 	if isSubRef(inputRefPrefix, importRef) {
-		return fmt.Errorf("%w: bad import", ErrInvalidImport)
+		return fmt.Errorf("%w: cannot import input: %q", ErrInvalidImport, importRef)
 	}
 
 	for _, libPrefix := range r.allowedLibPrefixes {
@@ -288,7 +289,11 @@ func (r *RegoRewriter) checkImport(i *ast.Import) error {
 		}
 	}
 
-	return fmt.Errorf("%w: bad import", ErrInvalidImport)
+	if isFutureRef(importRef) {
+		return nil
+	}
+
+	return fmt.Errorf("%w: bad import: %q", ErrInvalidImport, importRef)
 }
 
 // checkDataReferences checks that all data references are directed to allowed lib prefixes or

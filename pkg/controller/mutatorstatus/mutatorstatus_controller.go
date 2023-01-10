@@ -24,8 +24,9 @@ import (
 	"github.com/go-logr/logr"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
-	mutationsv1beta1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1beta1"
+	mutationsv1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1"
 	"github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/operations"
@@ -62,6 +63,8 @@ func (a *Adder) InjectTracker(t *readiness.Tracker) {}
 
 func (a *Adder) InjectMutationSystem(mutationSystem *mutation.System) {}
 
+func (a *Adder) InjectExpansionSystem(expansionSystem *expansion.System) {}
+
 func (a *Adder) InjectProviderCache(providerCache *externaldata.ProviderCache) {}
 
 // Add creates a new Mutator Status Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -77,7 +80,8 @@ func (a *Adder) Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler.
 func newReconciler(
 	mgr manager.Manager,
-	cs *watch.ControllerSwitch) reconcile.Reconciler {
+	cs *watch.ControllerSwitch,
+) reconcile.Reconciler {
 	return &ReconcileMutatorStatus{
 		// Separate reader and writer because manager's default client bypasses the cache for unstructured resources.
 		writer:       mgr.GetClient(),
@@ -120,7 +124,7 @@ func PodStatusToMutatorMapper(selfOnly bool, kindMatch string, packerMap handler
 			}
 		}
 		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1beta1", Kind: kind})
+		u.SetGroupVersionKind(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1", Kind: kind})
 		u.SetName(name)
 		return packerMap(u)
 	}
@@ -145,15 +149,22 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// Watch for changes to mutators
 	err = c.Watch(
-		&source.Kind{Type: &mutationsv1beta1.Assign{}},
-		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1beta1", Kind: "Assign"})),
+		&source.Kind{Type: &mutationsv1.Assign{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1", Kind: "Assign"})),
+	)
+	if err != nil {
+		return err
+	}
+	err = c.Watch(
+		&source.Kind{Type: &mutationsv1.AssignMetadata{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1", Kind: "AssignMetadata"})),
 	)
 	if err != nil {
 		return err
 	}
 	return c.Watch(
-		&source.Kind{Type: &mutationsv1beta1.AssignMetadata{}},
-		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1beta1", Kind: "AssignMetadata"})),
+		&source.Kind{Type: &mutationsv1.ModifySet{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1", Kind: "ModifySet"})),
 	)
 }
 

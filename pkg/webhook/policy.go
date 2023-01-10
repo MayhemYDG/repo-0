@@ -21,22 +21,29 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/open-policy-agent/cert-controller/pkg/rotator"
+	externaldataUnversioned "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/unversioned"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	rtypes "github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/gatekeeper/apis"
 	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/keys"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assign"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assignmeta"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/modifyset"
+	mutationtypes "github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"github.com/open-policy-agent/gatekeeper/pkg/operations"
 	"github.com/open-policy-agent/gatekeeper/pkg/target"
 	"github.com/open-policy-agent/gatekeeper/pkg/util"
@@ -45,6 +52,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -58,7 +66,7 @@ import (
 // https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#response
 const httpStatusWarning = 299
 
-var maxServingThreads = flag.Int("max-serving-threads", -1, "(alpha) cap the number of threads handling non-trivial requests, -1 means an infinite number of threads")
+var maxServingThreads = flag.Int("max-serving-threads", -1, "cap the number of threads handling non-trivial requests, -1 caps the number of threads to GOMAXPROCS. Defaults to -1.")
 
 func init() {
 	AddToManagerFuncs = append(AddToManagerFuncs, AddPolicyWebhook)
@@ -68,11 +76,13 @@ func init() {
 	}
 }
 
-// +kubebuilder:webhook:verbs=create;update,path=/v1/admit,mutating=false,failurePolicy=ignore,groups=*,resources=*,versions=*,name=validation.gatekeeper.sh,sideEffects=None,admissionReviewVersions=v1;v1beta1,matchPolicy=Exact
+// Explicitly list all known subresources except "status" (to avoid destabilizing the cluster and increasing load on gatekeeper). But include "services/status" for constraints that mitigate CVE-2020-8554.
+// You can find a rough list of subresources by doing a case-sensitive search in the Kubernetes codebase for 'Subresource("'
+// +kubebuilder:webhook:verbs=create;update,path=/v1/admit,mutating=false,failurePolicy=ignore,groups=*,resources=*;pods/ephemeralcontainers;pods/exec;pods/log;pods/eviction;pods/portforward;pods/proxy;pods/attach;pods/binding;deployments/scale;replicasets/scale;statefulsets/scale;replicationcontrollers/scale;services/proxy;nodes/proxy;services/status,versions=*,name=validation.gatekeeper.sh,sideEffects=None,admissionReviewVersions=v1;v1beta1,matchPolicy=Exact
 // +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch
 
 // AddPolicyWebhook registers the policy webhook server with the manager.
-func AddPolicyWebhook(mgr manager.Manager, opa *constraintclient.Client, processExcluder *process.Excluder, mutationSystem *mutation.System) error {
+func AddPolicyWebhook(mgr manager.Manager, deps Dependencies) error {
 	if !operations.IsAssigned(operations.Webhook) {
 		return nil
 	}
@@ -87,28 +97,30 @@ func AddPolicyWebhook(mgr manager.Manager, opa *constraintclient.Client, process
 		scheme.Scheme,
 		corev1.EventSource{Component: "gatekeeper-webhook"})
 	handler := &validationHandler{
-		opa: opa,
+		opa:             deps.OpaClient,
+		mutationSystem:  deps.MutationSystem,
+		expansionSystem: deps.ExpansionSystem,
 		webhookHandler: webhookHandler{
 			client:          mgr.GetClient(),
 			reader:          mgr.GetAPIReader(),
 			reporter:        reporter,
-			processExcluder: processExcluder,
+			processExcluder: deps.ProcessExcluder,
 			eventRecorder:   recorder,
 			gkNamespace:     util.GetNamespace(),
 		},
 	}
-	if *maxServingThreads > 0 {
-		handler.semaphore = make(chan struct{}, *maxServingThreads)
+	threadCount := *maxServingThreads
+	if threadCount < 1 {
+		threadCount = runtime.GOMAXPROCS(-1)
 	}
+	handler.semaphore = make(chan struct{}, threadCount)
 	wh := &admission.Webhook{Handler: handler}
 	// TODO(https://github.com/open-policy-agent/gatekeeper/issues/661): remove log injection if the race condition in the cited bug is eliminated.
 	// Otherwise we risk having unstable logger names for the webhook.
 	if err := wh.InjectLogger(log); err != nil {
 		return err
 	}
-	server := mgr.GetWebhookServer()
-	server.TLSMinVersion = *tlsMinVersion
-	server.Register("/v1/admit", wh)
+	congifureWebhookServer(mgr.GetWebhookServer()).Register("/v1/admit", wh)
 	return nil
 }
 
@@ -116,8 +128,10 @@ var _ admission.Handler = &validationHandler{}
 
 type validationHandler struct {
 	webhookHandler
-	opa       *constraintclient.Client
-	semaphore chan struct{}
+	opa             *constraintclient.Client
+	mutationSystem  *mutation.System
+	expansionSystem *expansion.System
+	semaphore       chan struct{}
 }
 
 // Handle the validation request
@@ -131,24 +145,13 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 		return admission.Allowed("Gatekeeper does not self-manage")
 	}
 
-	if req.AdmissionRequest.Operation == admissionv1.Delete {
-		// oldObject is the existing object.
-		// It is null for DELETE operations in API servers prior to v1.15.0.
-		// https://github.com/kubernetes/website/pull/14671
-		if req.AdmissionRequest.OldObject.Raw == nil {
-			vResp := admission.Denied("For admission webhooks registered for DELETE operations, please use Kubernetes v1.15.0+.")
-			vResp.Result.Code = http.StatusInternalServerError
-			return vResp
-		}
-		// For admission webhooks registered for DELETE operations on k8s built APIs or CRDs,
-		// the apiserver now sends the existing object as admissionRequest.Request.OldObject to the webhook
-		// object is the new object being admitted.
-		// It is null for DELETE operations.
-		// https://github.com/kubernetes/kubernetes/pull/76346
-		req.AdmissionRequest.Object = req.AdmissionRequest.OldObject
+	if err := util.SetObjectOnDelete(&req); err != nil {
+		vResp := admission.Denied(err.Error())
+		vResp.Result.Code = http.StatusInternalServerError
+		return vResp
 	}
 
-	if userErr, err := h.validateGatekeeperResources(&req); err != nil {
+	if userErr, err := h.validateGatekeeperResources(ctx, &req); err != nil {
 		var code int32
 		if userErr {
 			code = http.StatusUnprocessableEntity
@@ -161,7 +164,11 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 	requestResponse := unknownResponse
 	defer func() {
 		if h.reporter != nil {
-			if err := h.reporter.ReportValidationRequest(ctx, requestResponse, time.Since(timeStart)); err != nil {
+			isDryRun := "false"
+			if req.DryRun != nil && *req.DryRun {
+				isDryRun = "true"
+			}
+			if err := h.reporter.ReportValidationRequest(ctx, requestResponse, isDryRun, time.Since(timeStart)); err != nil {
 				log.Error(err, "failed to report request")
 			}
 		}
@@ -252,7 +259,7 @@ func (h *validationHandler) getValidationMessages(res []*rtypes.Result, req *adm
 				logging.ResourceNamespace, req.AdmissionRequest.Namespace,
 				logging.ResourceName, resourceName,
 				logging.RequestUsername, req.AdmissionRequest.UserInfo.Username,
-			).Info("denied admission")
+			).Info(fmt.Sprintf("denied admission: %s", r.Msg))
 		}
 		if *emitAdmissionEvents {
 			annotations := map[string]string{
@@ -315,12 +322,12 @@ func (h *validationHandler) getValidationMessages(res []*rtypes.Result, req *adm
 
 // validateGatekeeperResources returns whether an issue is user error (vs internal) and any errors
 // validating internal resources.
-func (h *validationHandler) validateGatekeeperResources(req *admission.Request) (bool, error) {
+func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req *admission.Request) (bool, error) {
 	gvk := req.AdmissionRequest.Kind
 
 	switch {
 	case gvk.Group == "templates.gatekeeper.sh" && gvk.Kind == "ConstraintTemplate":
-		return h.validateTemplate(req)
+		return h.validateTemplate(ctx, req)
 	case gvk.Group == "constraints.gatekeeper.sh":
 		return h.validateConstraint(req)
 	case gvk.Group == "config.gatekeeper.sh" && gvk.Kind == "Config":
@@ -333,6 +340,8 @@ func (h *validationHandler) validateGatekeeperResources(req *admission.Request) 
 		return h.validateAssign(req)
 	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "ModifySet":
 		return h.validateModifySet(req)
+	case req.AdmissionRequest.Kind.Group == externalDataGroup && req.AdmissionRequest.Kind.Kind == "Provider":
+		return h.validateProvider(req)
 	}
 
 	return false, nil
@@ -342,18 +351,33 @@ func (h *validationHandler) validateGatekeeperResources(req *admission.Request) 
 // Returns an error if the ConstraintTemplate fails validation.
 // The returned boolean is only true if error is non-nil and is a result of user
 // error.
-func (h *validationHandler) validateTemplate(req *admission.Request) (bool, error) {
+func (h *validationHandler) validateTemplate(ctx context.Context, req *admission.Request) (bool, error) {
 	templ, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, nil)
 	if err != nil {
 		return false, err
 	}
 
 	unversioned := &templates.ConstraintTemplate{}
-	if err := runtimeScheme.Convert(templ, unversioned, nil); err != nil {
+	err = runtimeScheme.Convert(templ, unversioned, nil)
+	if err != nil {
 		return false, err
 	}
 
-	if err := h.opa.ValidateConstraintTemplate(unversioned); err != nil {
+	// Ensure that it is possible to generate a CRD for this ConstraintTemplate.
+	_, err = h.opa.CreateCRD(ctx, unversioned)
+	if err != nil {
+		return true, err
+	}
+
+	// Create a temporary Driver and attempt to add the Template to it. This
+	// ensures the Rego code both parses and compiles.
+	d, err := local.New()
+	if err != nil {
+		return false, fmt.Errorf("unable to create Driver: %v", err)
+	}
+
+	err = d.AddTemplate(ctx, unversioned)
+	if err != nil {
 		return true, err
 	}
 
@@ -445,6 +469,24 @@ func (h *validationHandler) validateModifySet(req *admission.Request) (bool, err
 	return false, nil
 }
 
+func (h *validationHandler) validateProvider(req *admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, nil)
+	if err != nil {
+		return false, err
+	}
+	provider := &externaldataUnversioned.Provider{}
+	if err := runtimeScheme.Convert(obj, provider, nil); err != nil {
+		return false, err
+	}
+
+	// Ensure that it is possible to insert the Provider into the cache.
+	cache := externaldata.NewCache()
+	if err := cache.Upsert(provider); err != nil {
+		return true, err
+	}
+	return false, nil
+}
+
 // traceSwitch returns true if a request should be traced.
 func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Request) (*rtypes.Responses, error) {
 	// if we have a maximum number of concurrent serving goroutines, try to acquire
@@ -459,14 +501,83 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Re
 			return nil, errors.New("serving context canceled, aborting request")
 		}
 	}
+
+	review, err := h.createReviewForRequest(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create augmentedReview: %s", err)
+	}
+
+	// Convert the request's generator resource to unstructured for expansion
+	obj := &unstructured.Unstructured{}
+	if _, _, err := deserializer.Decode(req.Object.Raw, nil, obj); err != nil {
+		return nil, fmt.Errorf("error decoding generator resource %s: %v", req.Name, err)
+	}
+	obj.SetNamespace(req.Namespace)
+	obj.SetGroupVersionKind(
+		schema.GroupVersionKind{
+			Group:   req.Kind.Group,
+			Version: req.Kind.Version,
+			Kind:    req.Kind.Kind,
+		})
+
+	// Expand the generator and apply mutators to the resultant resources
+	// The base object is not mutated, so we do not need to specify its source
+	base := &mutationtypes.Mutable{
+		Object:    obj,
+		Namespace: review.Namespace,
+		Username:  req.AdmissionRequest.UserInfo.Username,
+	}
+	resultants, err := h.expansionSystem.Expand(base)
+	if err != nil {
+		return nil, fmt.Errorf("unable to expand object: %s", err)
+	}
+
 	trace, dump := h.tracingLevel(ctx, req)
+	resp, err := h.review(ctx, review, trace, dump)
+	if err != nil {
+		return nil, fmt.Errorf("error reviewing resource %s: %s", req.Name, err)
+	}
+
+	for _, res := range resultants {
+		resultantResp, err := h.review(ctx, createReviewForResultant(res.Obj, review.Namespace), trace, dump)
+		if err != nil {
+			return nil, fmt.Errorf("error reviewing resultant resource: %s", err)
+		}
+		expansion.OverrideEnforcementAction(res.EnforcementAction, resultantResp)
+		expansion.AggregateResponses(res.TemplateName, resp, resultantResp)
+	}
+
+	return resp, nil
+}
+
+func (h *validationHandler) review(ctx context.Context, review interface{}, trace bool, dump bool) (*rtypes.Responses, error) {
+	resp, err := h.opa.Review(ctx, review, drivers.Tracing(trace))
+	if resp != nil && trace {
+		log.Info(resp.TraceDump())
+	}
+	if dump {
+		dump, err := h.opa.Dump(ctx)
+		if err != nil {
+			log.Error(err, "dump error")
+		} else {
+			log.Info(dump)
+		}
+	}
+
+	return resp, err
+}
+
+func (h *validationHandler) createReviewForRequest(ctx context.Context, req *admission.Request) (*target.AugmentedReview, error) {
 	// Coerce server-side apply admission requests into treating namespaces
 	// the same way as older admission requests. See
 	// https://github.com/open-policy-agent/gatekeeper/issues/792
 	if req.Kind.Kind == namespaceKind && req.Kind.Group == "" {
 		req.Namespace = ""
 	}
-	review := &target.AugmentedReview{AdmissionRequest: &req.AdmissionRequest}
+	review := &target.AugmentedReview{
+		AdmissionRequest: &req.AdmissionRequest,
+		Source:           mutationtypes.SourceTypeOriginal,
+	}
 	if req.AdmissionRequest.Namespace != "" {
 		ns := &corev1.Namespace{}
 		if err := h.client.Get(ctx, types.NamespacedName{Name: req.AdmissionRequest.Namespace}, ns); err != nil {
@@ -482,19 +593,15 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Re
 		review.Namespace = ns
 	}
 
-	resp, err := h.opa.Review(ctx, review, constraintclient.Tracing(trace))
-	if resp != nil && trace {
-		log.Info(resp.TraceDump())
+	return review, nil
+}
+
+func createReviewForResultant(obj *unstructured.Unstructured, ns *corev1.Namespace) *target.AugmentedUnstructured {
+	return &target.AugmentedUnstructured{
+		Object:    *obj,
+		Namespace: ns,
+		Source:    mutationtypes.SourceTypeGenerated,
 	}
-	if dump {
-		dump, err := h.opa.Dump(ctx)
-		if err != nil {
-			log.Error(err, "dump error")
-		} else {
-			log.Info(dump)
-		}
-	}
-	return resp, err
 }
 
 func getViolationRef(gkNamespace, rkind, rname, rnamespace, ckind, cname, cnamespace string) *corev1.ObjectReference {

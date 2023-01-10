@@ -24,6 +24,7 @@ import (
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	syncc "github.com/open-policy-agent/gatekeeper/pkg/controller/sync"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/keys"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
@@ -57,6 +58,7 @@ type Adder struct {
 	ControllerSwitch *watch.ControllerSwitch
 	Tracker          *readiness.Tracker
 	ProcessExcluder  *process.Excluder
+	WatchSet         *watch.Set
 }
 
 // Add creates a new ConfigController and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
@@ -65,7 +67,7 @@ func (a *Adder) Add(mgr manager.Manager) error {
 	// Events will be used to receive events from dynamic watches registered
 	// via the registrar below.
 	events := make(chan event.GenericEvent, 1024)
-	r, err := newReconciler(mgr, a.Opa, a.WatchManager, a.ControllerSwitch, a.Tracker, a.ProcessExcluder, events, events)
+	r, err := newReconciler(mgr, a.Opa, a.WatchManager, a.ControllerSwitch, a.Tracker, a.ProcessExcluder, events, a.WatchSet, events)
 	if err != nil {
 		return err
 	}
@@ -95,14 +97,19 @@ func (a *Adder) InjectProcessExcluder(m *process.Excluder) {
 
 func (a *Adder) InjectMutationSystem(mutationSystem *mutation.System) {}
 
+func (a *Adder) InjectExpansionSystem(expansionSystem *expansion.System) {}
+
 func (a *Adder) InjectProviderCache(providerCache *externaldata.ProviderCache) {}
+
+func (a *Adder) InjectWatchSet(watchSet *watch.Set) {
+	a.WatchSet = watchSet
+}
 
 // newReconciler returns a new reconcile.Reconciler
 // events is the channel from which sync controller will receive the events
 // regEvents is the channel registered by Registrar to put the events in
 // events and regEvents point to same event channel except for testing.
-func newReconciler(mgr manager.Manager, opa syncc.OpaDataClient, wm *watch.Manager, cs *watch.ControllerSwitch, tracker *readiness.Tracker, processExcluder *process.Excluder, events <-chan event.GenericEvent, regEvents chan<- event.GenericEvent) (*ReconcileConfig, error) {
-	watchSet := watch.NewSet()
+func newReconciler(mgr manager.Manager, opa syncc.OpaDataClient, wm *watch.Manager, cs *watch.ControllerSwitch, tracker *readiness.Tracker, processExcluder *process.Excluder, events <-chan event.GenericEvent, watchSet *watch.Set, regEvents chan<- event.GenericEvent) (*ReconcileConfig, error) {
 	filteredOpa := syncc.NewFilteredOpaDataClient(opa, watchSet)
 	syncMetricsCache := syncc.NewMetricsCache()
 
@@ -116,6 +123,10 @@ func newReconciler(mgr manager.Manager, opa syncc.OpaDataClient, wm *watch.Manag
 	// Create subordinate controller - we will feed it events dynamically via watch
 	if err := syncAdder.Add(mgr); err != nil {
 		return nil, fmt.Errorf("registering sync controller: %w", err)
+	}
+
+	if watchSet == nil {
+		return nil, fmt.Errorf("watchSet must be non-nil")
 	}
 
 	w, err := wm.NewRegistrar(
@@ -169,11 +180,13 @@ type ReconcileConfig struct {
 	syncMetricsCache *syncc.MetricsCache
 	cs               *watch.ControllerSwitch
 	watcher          *watch.Registrar
-	watched          *watch.Set
-	needsReplay      *watch.Set
-	needsWipe        bool
-	tracker          *readiness.Tracker
-	processExcluder  *process.Excluder
+
+	watched *watch.Set
+
+	needsReplay     *watch.Set
+	needsWipe       bool
+	tracker         *readiness.Tracker
+	processExcluder *process.Excluder
 }
 
 // +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch
@@ -273,23 +286,25 @@ func (r *ReconcileConfig) Reconcile(ctx context.Context, request reconcile.Reque
 	if r.needsReplay == nil {
 		r.needsReplay = r.watched.Intersection(newSyncOnly)
 	}
-	r.watched.Replace(newSyncOnly)
-
-	// swapping with the new excluder
-	r.processExcluder.Replace(newExcluder)
-
-	// *Note the following steps are not transactional with respect to admission control*
 
 	// Wipe all data to avoid stale state if needed. Happens once per watch-set-change.
 	if err := r.wipeCacheIfNeeded(ctx); err != nil {
 		return reconcile.Result{}, fmt.Errorf("wiping opa data cache: %w", err)
 	}
 
-	// Important: dynamic watches update must happen *after* updating our watchSet.
-	// Otherwise the sync controller will drop events for the newly watched kinds.
-	// Defer error handling so object re-sync happens even if the watch is hard
-	// errored due to a missing GVK in the watch set.
-	if err := r.watcher.ReplaceWatch(newSyncOnly.Items()); err != nil {
+	r.watched.Replace(newSyncOnly, func() {
+		// swapping with the new excluder
+		r.processExcluder.Replace(newExcluder)
+
+		// *Note the following steps are not transactional with respect to admission control*
+
+		// Important: dynamic watches update must happen *after* updating our watchSet.
+		// Otherwise, the sync controller will drop events for the newly watched kinds.
+		// Defer error handling so object re-sync happens even if the watch is hard
+		// errored due to a missing GVK in the watch set.
+		err = r.watcher.ReplaceWatch(newSyncOnly.Items())
+	})
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -305,7 +320,7 @@ func (r *ReconcileConfig) Reconcile(ctx context.Context, request reconcile.Reque
 
 func (r *ReconcileConfig) wipeCacheIfNeeded(ctx context.Context) error {
 	if r.needsWipe {
-		if _, err := r.opa.RemoveData(ctx, target.WipeData{}); err != nil {
+		if _, err := r.opa.RemoveData(ctx, target.WipeData()); err != nil {
 			return err
 		}
 

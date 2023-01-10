@@ -9,6 +9,7 @@ import (
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/gatekeeper/pkg/gator/fixtures"
+	"github.com/open-policy-agent/gatekeeper/pkg/target"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
@@ -59,7 +60,7 @@ func TestTest(t *testing.T) {
 	tcs := []struct {
 		name   string
 		inputs []string
-		want   []*types.Result
+		want   []*GatorResult
 		err    error
 	}{
 		{
@@ -77,21 +78,27 @@ func TestTest(t *testing.T) {
 				fixtures.ConstraintNeverValidate,
 				fixtures.Object,
 			},
-			want: []*types.Result{
+			want: []*GatorResult{
 				{
-					Msg:        "never validate",
-					Constraint: constraintNeverValidate,
-					Resource:   constraintNeverValidate,
+					Result: types.Result{
+						Target:     target.Name,
+						Msg:        "never validate",
+						Constraint: constraintNeverValidate,
+					},
 				},
 				{
-					Msg:        "never validate",
-					Constraint: constraintNeverValidate,
-					Resource:   object,
+					Result: types.Result{
+						Target:     target.Name,
+						Msg:        "never validate",
+						Constraint: constraintNeverValidate,
+					},
 				},
 				{
-					Msg:        "never validate",
-					Constraint: constraintNeverValidate,
-					Resource:   templateNeverValidate,
+					Result: types.Result{
+						Target:     target.Name,
+						Msg:        "never validate",
+						Constraint: constraintNeverValidate,
+					},
 				},
 			},
 		},
@@ -103,16 +110,20 @@ func TestTest(t *testing.T) {
 				fixtures.ObjectReferentialInventory,
 				fixtures.ObjectReferentialDeny,
 			},
-			want: []*types.Result{
+			want: []*GatorResult{
 				{
-					Msg:        "same selector as service <gatekeeper-test-service-disallowed> in namespace <default>",
-					Constraint: constraintReferential,
-					Resource:   objectReferentialInventory,
+					Result: types.Result{
+						Target:     target.Name,
+						Msg:        "same selector as service <gatekeeper-test-service-disallowed> in namespace <default>",
+						Constraint: constraintReferential,
+					},
 				},
 				{
-					Msg:        "same selector as service <gatekeeper-test-service-example> in namespace <default>",
-					Constraint: constraintReferential,
-					Resource:   objectReferentialDeny,
+					Result: types.Result{
+						Target:     target.Name,
+						Msg:        "same selector as service <gatekeeper-test-service-example> in namespace <default>",
+						Constraint: constraintReferential,
+					},
 				},
 			},
 		},
@@ -163,9 +174,8 @@ func TestTest(t *testing.T) {
 				objs = append(objs, u)
 			}
 
-			resps, err := Test(objs)
+			resps, err := Test(objs, false)
 			if tc.err != nil {
-				// If we're checking for specific errors, use errors.Is() to verify
 				if err == nil {
 					t.Errorf("got nil err, want %v", tc.err)
 				}
@@ -178,11 +188,78 @@ func TestTest(t *testing.T) {
 
 			got := resps.Results()
 
-			diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(types.Result{}, "Metadata", "EnforcementAction", "Review"))
+			diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(GatorResult{}, "Metadata", "EvaluationMeta", "EnforcementAction", "ViolatingObject"))
 			if diff != "" {
-				t.Errorf("diff in Result objects (-want +got):\n%s", diff)
+				t.Errorf("diff in GatorResult objects (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// Test_Test_withTrace proves that we can get a Trace populated when we ask for it.
+func Test_Test_withTrace(t *testing.T) {
+	inputs := []string{
+		fixtures.TemplateNeverValidate,
+		fixtures.ConstraintNeverValidate,
+		fixtures.Object,
+	}
+
+	var objs []*unstructured.Unstructured
+	for _, input := range inputs {
+		u, err := readUnstructured([]byte(input))
+		if err != nil {
+			t.Fatalf("readUnstructured for input %q: %v", input, err)
+		}
+		objs = append(objs, u)
+	}
+
+	resps, err := Test(objs, true)
+	if err != nil {
+		t.Errorf("got err '%v', want nil", err)
+	}
+
+	got := resps.Results()
+
+	want := []*GatorResult{
+		{
+			Result: types.Result{
+				Target:     target.Name,
+				Msg:        "never validate",
+				Constraint: constraintNeverValidate,
+			},
+		},
+		{
+			Result: types.Result{
+				Target:     target.Name,
+				Msg:        "never validate",
+				Constraint: constraintNeverValidate,
+			},
+		},
+		{
+			Result: types.Result{
+				Target:     target.Name,
+				Msg:        "never validate",
+				Constraint: constraintNeverValidate,
+			},
+		},
+	}
+
+	diff := cmp.Diff(want, got, cmpopts.IgnoreFields(
+		GatorResult{},
+		"Metadata",
+		"EvaluationMeta",
+		"EnforcementAction",
+		"ViolatingObject",
+		"Trace", // ignore Trace for now, we will assert non nil further down
+	))
+	if diff != "" {
+		t.Errorf("diff in GatorResult objects (-want +got):\n%s", diff)
+	}
+
+	for _, gotResult := range got {
+		if gotResult.Trace == nil {
+			t.Errorf("did not find a trace when we expected to find one")
+		}
 	}
 }
 

@@ -27,7 +27,6 @@ import (
 	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
-	podstatus "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	statusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
@@ -100,24 +99,24 @@ func setupManager(t *testing.T) (manager.Manager, *watch.Manager) {
 	return mgr, wm
 }
 
-func makeReconcileConstrainTemplate() *v1beta1.ConstraintTemplate {
+func makeReconcileConstraintTemplate(suffix string) *v1beta1.ConstraintTemplate {
 	return &v1beta1.ConstraintTemplate{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConstraintTemplate",
 			APIVersion: templatesv1.SchemeGroupVersion.String(),
 		},
-		ObjectMeta: metav1.ObjectMeta{Name: "denyall"},
+		ObjectMeta: metav1.ObjectMeta{Name: "denyall" + strings.ToLower(suffix)},
 		Spec: v1beta1.ConstraintTemplateSpec{
 			CRD: v1beta1.CRD{
 				Spec: v1beta1.CRDSpec{
 					Names: v1beta1.Names{
-						Kind: "DenyAll",
+						Kind: "DenyAll" + suffix,
 					},
 				},
 			},
 			Targets: []v1beta1.Target{
 				{
-					Target: "admission.k8s.gatekeeper.sh",
+					Target: target.Name,
 					Rego: `
 package foo
 
@@ -131,12 +130,19 @@ violation[{"msg": "denied!"}] {
 	}
 }
 
-func TestReconcile(t *testing.T) {
-	crdKey := types.NamespacedName{Name: "denyall.constraints.gatekeeper.sh"}
-	crdToDelete := &apiextensions.CustomResourceDefinition{}
-	crdToDelete.SetName(crdKey.Name)
-	crdToDelete.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+func crdKey(suffix string) types.NamespacedName {
+	return types.NamespacedName{Name: fmt.Sprintf("denyall%s.constraints.gatekeeper.sh", strings.ToLower(suffix))}
+}
 
+func expectedCRD(suffix string) *apiextensions.CustomResourceDefinition {
+	crd := &apiextensions.CustomResourceDefinition{}
+	key := crdKey(suffix)
+	crd.SetName(key.Name)
+	crd.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	return crd
+}
+
+func TestReconcile(t *testing.T) {
 	// Uncommenting the below enables logging of K8s internals like watch.
 	// fs := flag.NewFlagSet("", flag.PanicOnError)
 	// klog.InitFlags(fs)
@@ -156,7 +162,11 @@ func TestReconcile(t *testing.T) {
 	}
 
 	// initialize OPA
-	driver := local.New(local.Tracing(true))
+	driver, err := local.New(local.Tracing(true))
+	if err != nil {
+		t.Fatalf("unable to set up Driver: %v", err)
+	}
+
 	opaClient, err := constraintclient.NewClient(constraintclient.Targets(&target.K8sValidationTarget{}), constraintclient.Driver(driver))
 	if err != nil {
 		t.Fatalf("unable to set up OPA client: %s", err)
@@ -191,9 +201,11 @@ func TestReconcile(t *testing.T) {
 	testutils.StartManager(ctx, t, mgr)
 
 	t.Run("CRD Gets Created", func(t *testing.T) {
+		suffix := "CRDGetsCreated"
+
 		logger.Info("Running test: CRD Gets Created")
-		constraintTemplate := makeReconcileConstrainTemplate()
-		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, crdToDelete))
+		constraintTemplate := makeReconcileConstraintTemplate(suffix)
+		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, expectedCRD(suffix)))
 		createThenCleanup(ctx, t, c, constraintTemplate)
 
 		clientset := kubernetes.NewForConfigOrDie(cfg)
@@ -201,7 +213,7 @@ func TestReconcile(t *testing.T) {
 			return true
 		}, func() error {
 			crd := &apiextensionsv1.CustomResourceDefinition{}
-			if err := c.Get(ctx, crdKey, crd); err != nil {
+			if err := c.Get(ctx, crdKey(suffix), crd); err != nil {
 				return err
 			}
 			rs, err := clientset.Discovery().ServerResourcesForGroupVersion("constraints.gatekeeper.sh/v1beta1")
@@ -209,7 +221,7 @@ func TestReconcile(t *testing.T) {
 				return err
 			}
 			for _, r := range rs.APIResources {
-				if r.Kind == "DenyAll" {
+				if r.Kind == "DenyAll"+suffix {
 					return nil
 				}
 			}
@@ -221,12 +233,14 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("Constraint is marked as enforced", func(t *testing.T) {
+		suffix := "MarkedEnforced"
+
 		logger.Info("Running test: Constraint is marked as enforced")
-		constraintTemplate := makeReconcileConstrainTemplate()
-		cstr := newDenyAllCstr()
+		constraintTemplate := makeReconcileConstraintTemplate(suffix)
+		cstr := newDenyAllCstr(suffix)
 
 		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, cstr))
-		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, crdToDelete))
+		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, expectedCRD(suffix)))
 		createThenCleanup(ctx, t, c, constraintTemplate)
 
 		err = retry.OnError(constantRetry, func(error) bool {
@@ -238,7 +252,7 @@ func TestReconcile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err = constraintEnforced(ctx, c)
+		err = constraintEnforced(ctx, c, suffix)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,20 +279,22 @@ func TestReconcile(t *testing.T) {
 
 		gotResults := resp.Results()
 		if len(gotResults) != 1 {
-			fmt.Println(resp.TraceDump())
-			fmt.Println(opaClient.Dump(ctx))
+			t.Log(resp.TraceDump())
+			t.Log(opaClient.Dump(ctx))
 			t.Fatalf("want 1 result, got %v", gotResults)
 		}
 	})
 
 	t.Run("Deleted constraint CRDs are recreated", func(t *testing.T) {
+		suffix := "CRDRecreated"
+
 		logger.Info("Running test: Deleted constraint CRDs are recreated")
 		// Clean up to remove the crd, constraint and constraint template
-		constraintTemplate := makeReconcileConstrainTemplate()
-		cstr := newDenyAllCstr()
+		constraintTemplate := makeReconcileConstraintTemplate(suffix)
+		cstr := newDenyAllCstr(suffix)
 
 		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, cstr))
-		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, crdToDelete))
+		t.Cleanup(deleteObjectAndConfirm(ctx, t, c, expectedCRD(suffix)))
 		createThenCleanup(ctx, t, c, constraintTemplate)
 
 		var crd *apiextensionsv1.CustomResourceDefinition
@@ -286,7 +302,7 @@ func TestReconcile(t *testing.T) {
 			return true
 		}, func() error {
 			crd = &apiextensionsv1.CustomResourceDefinition{}
-			return c.Get(ctx, crdKey, crd)
+			return c.Get(ctx, crdKey(suffix), crd)
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -303,7 +319,7 @@ func TestReconcile(t *testing.T) {
 			return true
 		}, func() error {
 			crd := &apiextensionsv1.CustomResourceDefinition{}
-			if err := c.Get(ctx, crdKey, crd); err != nil {
+			if err := c.Get(ctx, crdKey(suffix), crd); err != nil {
 				return err
 			}
 			if !crd.GetDeletionTimestamp().IsZero() {
@@ -326,7 +342,7 @@ func TestReconcile(t *testing.T) {
 		err = retry.OnError(constantRetry, func(err error) bool {
 			return true
 		}, func() error {
-			sList := &podstatus.ConstraintPodStatusList{}
+			sList := &statusv1beta1.ConstraintPodStatusList{}
 			if err := c.List(ctx, sList); err != nil {
 				return err
 			}
@@ -342,14 +358,14 @@ func TestReconcile(t *testing.T) {
 		err = retry.OnError(constantRetry, func(err error) bool {
 			return true
 		}, func() error {
-			return c.Create(ctx, newDenyAllCstr())
+			return c.Create(ctx, newDenyAllCstr(suffix))
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// we need a longer timeout because deleting the CRD interrupts the watch
-		err = constraintEnforced(ctx, c)
+		err = constraintEnforced(ctx, c, suffix)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -370,7 +386,7 @@ func TestReconcile(t *testing.T) {
 				},
 				Targets: []v1beta1.Target{
 					{
-						Target: "admission.k8s.gatekeeper.sh",
+						Target: target.Name,
 						Rego: `
 	package foo
 
@@ -432,6 +448,8 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("Deleted constraint templates not enforced", func(t *testing.T) {
+		suffix := "DeletedNotEnforced"
+
 		logger.Info("Running test: Deleted constraint templates not enforced")
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -455,12 +473,12 @@ func TestReconcile(t *testing.T) {
 
 		gotResults := resp.Results()
 		if len(resp.Results()) != 0 {
-			fmt.Println(resp.TraceDump())
-			fmt.Println(opaClient.Dump(ctx))
+			t.Log(resp.TraceDump())
+			t.Log(opaClient.Dump(ctx))
 			t.Fatalf("did not get 0 results: %v", gotResults)
 		}
 
-		constraintTemplate := makeReconcileConstrainTemplate()
+		constraintTemplate := makeReconcileConstraintTemplate(suffix)
 		err = c.Delete(ctx, constraintTemplate)
 		if err != nil && !apierrors.IsNotFound(err) {
 			t.Fatal(err)
@@ -511,7 +529,7 @@ func TestReconcile_DeleteConstraintResources(t *testing.T) {
 			},
 			Targets: []v1beta1.Target{
 				{
-					Target: "admission.k8s.gatekeeper.sh",
+					Target: target.Name,
 					Rego: `
 package foo
 
@@ -547,7 +565,7 @@ violation[{"msg": "denied!"}] {
 	}
 
 	// Create the constraint for constraint template
-	cstr := newDenyAllCstr()
+	cstr := newDenyAllCstr("")
 	err = c.Create(ctx, cstr)
 	if err != nil {
 		t.Fatal(err)
@@ -567,7 +585,11 @@ violation[{"msg": "denied!"}] {
 	}
 
 	// initialize OPA
-	driver := local.New(local.Tracing(true))
+	driver, err := local.New(local.Tracing(true))
+	if err != nil {
+		t.Fatalf("unable to set up Driver: %v", err)
+	}
+
 	opaClient, err := constraintclient.NewClient(constraintclient.Targets(&target.K8sValidationTarget{}), constraintclient.Driver(driver))
 	if err != nil {
 		t.Fatalf("unable to set up OPA client: %s", err)
@@ -640,11 +662,11 @@ violation[{"msg": "denied!"}] {
 	}
 }
 
-func constraintEnforced(ctx context.Context, c client.Client) error {
+func constraintEnforced(ctx context.Context, c client.Client, suffix string) error {
 	return retry.OnError(constantRetry, func(err error) bool {
 		return true
 	}, func() error {
-		cstr := newDenyAllCstr()
+		cstr := newDenyAllCstr(suffix)
 		err := c.Get(ctx, types.NamespacedName{Name: "denyallconstraint"}, cstr)
 		if err != nil {
 			return err
@@ -662,12 +684,12 @@ func constraintEnforced(ctx context.Context, c client.Client) error {
 	})
 }
 
-func newDenyAllCstr() *unstructured.Unstructured {
+func newDenyAllCstr(suffix string) *unstructured.Unstructured {
 	cstr := &unstructured.Unstructured{}
 	cstr.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "constraints.gatekeeper.sh",
 		Version: "v1beta1",
-		Kind:    "DenyAll",
+		Kind:    "DenyAll" + suffix,
 	})
 	cstr.SetName("denyallconstraint")
 	return cstr
@@ -837,7 +859,13 @@ type testExpectations interface {
 // passed to client.Create, so it is not mutated by this call.
 func createThenCleanup(ctx context.Context, t *testing.T, c client.Client, obj client.Object) {
 	t.Helper()
-	err := c.Create(ctx, obj.DeepCopyObject().(client.Object))
+	cpy := obj.DeepCopyObject()
+	cpyObj, ok := cpy.(client.Object)
+	if !ok {
+		t.Fatalf("got obj.DeepCopyObject() type = %T, want %T", cpy, client.Object(nil))
+	}
+
+	err := c.Create(ctx, cpyObj)
 	if err != nil {
 		t.Fatal(err)
 	}

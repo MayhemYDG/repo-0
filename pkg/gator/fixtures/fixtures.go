@@ -1,6 +1,29 @@
+// fixtures package contains commonly used ConstraintTemplates, Constraints, Objects and other k8s resources
+// mostly used for testing.
 package fixtures
 
 const (
+	TemplateValidateUserInfo = `
+kind: ConstraintTemplate
+apiVersion: templates.gatekeeper.sh/v1beta1
+metadata:
+  name: validateuserinfo
+spec:
+  crd:
+    spec:
+      names:
+        kind: ValidateUserInfo
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8svalidateuserinfo
+        violation[{"msg": msg}] {
+          username := input.review.userInfo.username
+          not startswith(username, "system:")
+          msg := sprintf("username is not allowed to perform this operation: %v", [username])
+        }
+`
+
 	TemplateAlwaysValidate = `
 kind: ConstraintTemplate
 apiVersion: templates.gatekeeper.sh/v1beta1
@@ -152,6 +175,38 @@ spec:
     excludedNamespaces: ["excluded"]
 `
 
+	ConstraintIncludedNamespace = `
+kind: NeverValidate
+apiVersion: constraints.gatekeeper.sh/v1beta1
+metadata:
+  name: never-validate-namespace
+spec:
+  match:
+    namespaces: ["included"]
+`
+
+	ConstraintClusterScope = `
+kind: NeverValidate
+apiVersion: constraints.gatekeeper.sh/v1beta1
+metadata:
+  name: never-validate-namespace
+spec:
+  match:
+    scope: "Cluster"
+`
+
+	ConstraintNamespaceSelector = `
+kind: NeverValidate
+apiVersion: constraints.gatekeeper.sh/v1beta1
+metadata:
+  name: never-validate-namespace
+spec:
+  match:
+    namespaceSelector:
+      matchLabels:
+        bar: qux
+`
+
 	ConstraintNeverValidate = `
 kind: NeverValidate
 apiVersion: constraints.gatekeeper.sh/v1beta1
@@ -214,6 +269,21 @@ metadata:
   namespace: excluded
 `
 
+	ObjectNamespaceScope = `
+kind: Object
+apiVersion: group.sh/v1
+metadata:
+  name: object
+  namespace: foo
+`
+
+	ObjectClusterScope = `
+kind: Object
+apiVersion: group.sh/v1
+metadata:
+  name: object
+`
+
 	ObjectInvalid = `
 kind Object
 apiVersion: group.sh/v1
@@ -231,6 +301,23 @@ kind: Object
 apiVersion: group.sh/v1
 metadata:
   name: object`
+
+	NamespaceSelected = `
+kind: Namespace
+apiVersion: /v1
+metadata:
+  name: foo
+  labels:
+    bar: qux
+`
+	NamespaceNotSelected = `
+kind: Namespace
+apiVersion: /v1
+metadata:
+  name: foo
+  labels:
+    bar: bar
+`
 
 	TemplateReferential = `
 apiVersion: templates.gatekeeper.sh/v1beta1
@@ -327,5 +414,131 @@ spec:
     - port: 443
   selector:
     key: value
+`
+
+	TemplateRequiredLabel = `
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        # Schema for the parameters field
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+
+        violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          ns := [n | data.inventory.cluster.v1.Namespace[n]]
+          msg := sprintf("I can grab namespaces... %v ... and dump the inventory... %v", [ns, data.inventory])
+        }
+`
+
+	ConstraintRequireLabelInvalid = `
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: required-labels
+spec:
+  parameters:
+    labels: "abc"
+`
+
+	ConstraintRequireLabelValid = `
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: required-labels
+spec:
+  parameters:
+    labels: ["abc"]
+`
+
+	// AdmissionReviewMissingRequest makes sure that our code can handle nil requests.
+	AdmissionReviewMissingRequest = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1beta1
+`
+	// AdmissionReviewMissingObjectAndOldObject makes sure we enforce having an object to review.
+	AdmissionReviewMissingObjectAndOldObject = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1beta1
+request:
+  name:
+`
+
+	// AdmissionReviewWithOldObject proves that our code handles submitting a request with an oldObject for review.
+	AdmissionReviewWithOldObject = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1beta1
+request:
+  oldObject:
+    labels: 
+      - app: "bar"
+`
+
+	// DeleteAdmissionReviewWithNoOldObject enforces the AdmissionRequest behavior for k8s v1.15.0+ for DELETE operations.
+	DeleteAdmissionReviewWithNoOldObject = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1beta1
+request:
+  operation: "DELETE"
+  object:
+    labels:
+      - app: "bar"
+`
+	// SystemAdmissionReview holds a request coming from a system user name.
+	SystemAdmissionReview = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1beta1
+request:
+  userInfo:
+    username: "system:foo"
+  object:
+    labels: 
+      - app: "bar"
+`
+
+	// NonSystemAdmissionReview holds a request coming from a non system user name.
+	NonSystemAdmissionReview = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1
+request:
+  userInfo:
+    username: "foo"
+  object:
+    labels: 
+      - app: "bar"
+`
+
+	// InvalidAdmissionReview cannot be converted into a typed AdmissionReview.
+	InvalidAdmissionReview = `
+kind: AdmissionReview
+apiVersion: admission.k8s.io/v1
+request:
+key_that_does_not_exist_in_spec: "some_value"
+`
+
+	ConstraintAlwaysValidateUserInfo = `
+kind: ValidateUserInfo
+apiVersion: constraints.gatekeeper.sh/v1beta1
+metadata:
+  name: always-pass
 `
 )

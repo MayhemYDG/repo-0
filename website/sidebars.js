@@ -31,8 +31,18 @@ module.exports = {
         'mutation',
         'constrainttemplates',
         'externaldata',
+        'expansion',
         'gator',
         'workload-resources'
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Architecture',
+      collapsed: false,
+      items: [
+        'operations',
+        'performance-tuning'
       ],
     },
     {
@@ -40,6 +50,7 @@ module.exports = {
       label: 'Contributing',
       collapsed: false,
       items: [
+        'developers',
         'help',
         'security'
       ],

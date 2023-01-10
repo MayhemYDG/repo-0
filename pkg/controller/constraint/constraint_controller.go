@@ -27,6 +27,7 @@ import (
 	constraintstatusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/constraintstatus"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
@@ -66,7 +67,11 @@ type Adder struct {
 	Tracker          *readiness.Tracker
 	GetPod           func(context.Context) (*corev1.Pod, error)
 	ProcessExcluder  *process.Excluder
-	AssumeDeleted    func(schema.GroupVersionKind) bool
+	// IfWatching allows the reconciler to only execute functions if a constraint
+	// template is currently being watched. It is designed to be atomic to avoid
+	// race conditions between the constraint controller and the constraint template
+	// controller
+	IfWatching func(schema.GroupVersionKind, func() error) (bool, error)
 }
 
 func (a *Adder) InjectOpa(o *constraintclient.Client) {
@@ -87,6 +92,8 @@ func (a *Adder) InjectTracker(t *readiness.Tracker) {
 
 func (a *Adder) InjectMutationSystem(mutationSystem *mutation.System) {}
 
+func (a *Adder) InjectExpansionSystem(expansionSystem *expansion.System) {}
+
 // Add creates a new Constraint Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func (a *Adder) Add(mgr manager.Manager) error {
@@ -103,8 +110,8 @@ func (a *Adder) Add(mgr manager.Manager) error {
 	if a.GetPod != nil {
 		r.getPod = a.GetPod
 	}
-	if a.AssumeDeleted != nil {
-		r.assumeDeleted = a.AssumeDeleted
+	if a.IfWatching != nil {
+		r.ifWatching = a.IfWatching
 	}
 	return add(mgr, r, a.Events)
 }
@@ -126,7 +133,8 @@ func newReconciler(
 	cs *watch.ControllerSwitch,
 	reporter StatsReporter,
 	constraintsCache *ConstraintsCache,
-	tracker *readiness.Tracker) *ReconcileConstraint {
+	tracker *readiness.Tracker,
+) *ReconcileConstraint {
 	r := &ReconcileConstraint{
 		// Separate reader and writer because manager's default client bypasses the cache for unstructured resources.
 		writer:       mgr.GetClient(),
@@ -143,7 +151,7 @@ func newReconciler(
 	}
 	r.getPod = r.defaultGetPod
 	// default
-	r.assumeDeleted = func(schema.GroupVersionKind) bool { return false }
+	r.ifWatching = func(_ schema.GroupVersionKind, fn func() error) (bool, error) { return true, fn() }
 	return r
 }
 
@@ -194,9 +202,11 @@ type ReconcileConstraint struct {
 	constraintsCache *ConstraintsCache
 	tracker          *readiness.Tracker
 	getPod           func(context.Context) (*corev1.Pod, error)
-	// assumeDeleted allows us to short-circuit get requests
-	// that would otherwise trigger a watch
-	assumeDeleted func(schema.GroupVersionKind) bool
+	// ifWatching allows us to short-circuit get requests
+	// that would otherwise trigger a watch. The bool returns whether
+	// the function was executed, which can be used to determine
+	// whether the reconciler should infer the object has been deleted
+	ifWatching func(schema.GroupVersionKind, func() error) (bool, error)
 }
 
 // +kubebuilder:rbac:groups=constraints.gatekeeper.sh,resources=*,verbs=get;list;watch;create;update;patch;delete
@@ -231,12 +241,15 @@ func (r *ReconcileConstraint) Reconcile(ctx context.Context, request reconcile.R
 	deleted := false
 	instance := &unstructured.Unstructured{}
 	instance.SetGroupVersionKind(gvk)
-	if r.assumeDeleted(gvk) {
-		deleted = true
-		instance.SetNamespace(unpackedRequest.NamespacedName.Namespace)
-		instance.SetName(unpackedRequest.NamespacedName.Name)
-	} else if err := r.reader.Get(ctx, unpackedRequest.NamespacedName, instance); err != nil {
-		if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+	executed, err := r.ifWatching(gvk, func() error {
+		return r.reader.Get(ctx, unpackedRequest.NamespacedName, instance)
+	})
+
+	// if we executed a get, we can infer deletion status from the object,
+	// otherwise we must assume the object has been deleted, since we are no longer
+	// watching the object (which only happens if the constraint template has been deleted)
+	if (executed && err != nil) || !executed {
+		if err != nil && !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
 			return reconcile.Result{}, err
 		}
 		deleted = true

@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsv1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1"
 	statusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/mutators"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -104,9 +105,17 @@ func (c *fakeClient) Get(_ context.Context, key client.ObjectKey, obj client.Obj
 
 	switch o := obj.(type) {
 	case *fakeMutatorObject:
-		*o = *got.object.(*fakeMutatorObject)
+		g, ok := got.object.(*fakeMutatorObject)
+		if !ok {
+			return fmt.Errorf("got.object is type %T, want %T", got.object, &fakeMutatorObject{})
+		}
+		*o = *g
 	case *statusv1beta1.MutatorPodStatus:
-		*o = *got.object.(*statusv1beta1.MutatorPodStatus)
+		g, ok := got.object.(*statusv1beta1.MutatorPodStatus)
+		if !ok {
+			return fmt.Errorf("got.object is type %T, want %T", got.object, &statusv1beta1.MutatorPodStatus{})
+		}
+		*o = *g
 	default:
 		return fmt.Errorf("unrecognized type %T", obj)
 	}
@@ -245,13 +254,9 @@ func (m *fakeMutator) HasDiff(right mutationtypes.Mutator) bool {
 		m.path.String() != other.path.String()
 }
 
-type noOpLogger struct {
-	logr.Logger
+func (m *fakeMutator) UsesExternalData() bool {
+	return false
 }
-
-func (l noOpLogger) Info(string, ...interface{}) {}
-
-func (l noOpLogger) Error(error, string, ...interface{}) {}
 
 type errSome struct{ id int }
 
@@ -280,7 +285,7 @@ func newFakeReconciler(t *testing.T, c client.Client, events chan event.GenericE
 
 	return &Reconciler{
 		Client:         c,
-		log:            noOpLogger{},
+		log:            logr.New(logf.NullLogSink{}),
 		newMutationObj: func() client.Object { return &fakeMutatorObject{} },
 		cache:          mutators.NewMutationCache(),
 		mutatorFor: func(object client.Object) (mutationtypes.Mutator, error) {
@@ -311,7 +316,7 @@ func newFakeReconciler(t *testing.T, c client.Client, events chan event.GenericE
 			), nil
 		},
 		scheme: s,
-		gvk:    mutationsv1alpha1.GroupVersion.WithKind("fake"),
+		gvk:    mutationsv1.GroupVersion.WithKind("fake"),
 		events: events,
 	}
 }

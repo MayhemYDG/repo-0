@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -46,6 +48,7 @@ var (
 const (
 	serviceAccountName = "gatekeeper-admin"
 	mutationsGroup     = "mutations.gatekeeper.sh"
+	externalDataGroup  = "externaldata.gatekeeper.sh"
 	namespaceKind      = "Namespace"
 )
 
@@ -56,8 +59,10 @@ var (
 	disableEnforcementActionValidation = flag.Bool("disable-enforcementaction-validation", false, "disable validation of the enforcementAction field of a constraint")
 	logDenies                          = flag.Bool("log-denies", false, "log detailed info on each deny")
 	emitAdmissionEvents                = flag.Bool("emit-admission-events", false, "(alpha) emit Kubernetes events in gatekeeper namespace for each admission violation")
-	tlsMinVersion                      = flag.String("tls-min-version", "1.2", "minimum version of TLS supported")
+	tlsMinVersion                      = flag.String("tls-min-version", "1.3", "minimum version of TLS supported")
 	serviceaccount                     = fmt.Sprintf("system:serviceaccount:%s:%s", util.GetNamespace(), serviceAccountName)
+	clientCAName                       = flag.String("client-ca-name", "", "name of the certificate authority bundle to authenticate the Kubernetes API server requests against")
+	certCNName                         = flag.String("client-cn-name", "kube-apiserver", "expected CN name on the client certificate attached by apiserver in requests to the webhook")
 	// webhookName is deprecated, set this on the manifest YAML if needed".
 )
 
@@ -134,6 +139,7 @@ func (h *webhookHandler) skipExcludedNamespace(req *admissionv1.AdmissionRequest
 	if _, _, err := deserializer.Decode(req.Object.Raw, nil, obj); err != nil {
 		return false, err
 	}
+	obj.SetNamespace(req.Namespace)
 
 	isNamespaceExcluded, err := h.processExcluder.IsNamespaceExcluded(excludedProcess, obj)
 	if err != nil {
@@ -141,4 +147,29 @@ func (h *webhookHandler) skipExcludedNamespace(req *admissionv1.AdmissionRequest
 	}
 
 	return isNamespaceExcluded, err
+}
+
+func congifureWebhookServer(server *webhook.Server) *webhook.Server {
+	server.TLSMinVersion = *tlsMinVersion
+	if *clientCAName != "" {
+		server.ClientCAName = *clientCAName
+		server.TLSOpts = []func(*tls.Config){
+			func(cfg *tls.Config) {
+				cfg.VerifyConnection = getCertNameVerifier()
+			},
+		}
+	}
+	return server
+}
+
+func getCertNameVerifier() func(cs tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) > 0 {
+			if cs.PeerCertificates[0].Subject.CommonName != *certCNName {
+				return fmt.Errorf("x509: subject with cn=%s do not identify as %s", cs.PeerCertificates[0].Subject.CommonName, *certCNName)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to verify CN name of certificate")
+	}
 }

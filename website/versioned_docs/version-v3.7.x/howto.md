@@ -12,7 +12,7 @@ Before you can define a constraint, you must first define a [`ConstraintTemplate
 Here is an example constraint template that requires all labels described by the constraint to be present:
 
 ```yaml
-apiVersion: templates.gatekeeper.sh/v1beta1
+apiVersion: templates.gatekeeper.sh/v1
 kind: ConstraintTemplate
 metadata:
   name: k8srequiredlabels
@@ -24,10 +24,12 @@ spec:
       validation:
         # Schema for the `parameters` field
         openAPIV3Schema:
+          type: object
           properties:
             labels:
               type: array
-              items: string
+              items:
+                type: string
   targets:
     - target: admission.k8s.gatekeeper.sh
       rego: |
@@ -127,7 +129,7 @@ The K8sRequiredLabels "ns-must-have-gk" is invalid: spec.parameters: Invalid val
 
 ### The enforcementAction field
 
-The `enforcementAction` field defines the action for handling Constraint violations. By default, `enforcementAction` is set to `deny` as the default behavior is to deny admission requests with any violation. Other supported enforcementActions include `dryrun` and `warn`. Refer to [Handling Constraint Violations](violations.md) for more details. 
+The `enforcementAction` field defines the action for handling Constraint violations. By default, `enforcementAction` is set to `deny` as the default behavior is to deny admission requests with any violation. Other supported enforcementActions include `dryrun` and `warn`. Refer to [Handling Constraint Violations](violations.md) for more details.
 
 ### Listing constraints
 You can list all constraints in a cluster with the following command:
@@ -135,3 +137,18 @@ You can list all constraints in a cluster with the following command:
 ```sh
 kubectl get constraints
 ```
+
+### Input Review
+
+The `input.review` object stores the [admission request](https://pkg.go.dev/k8s.io/kubernetes/pkg/apis/admission#AdmissionRequest) under evaluation. It has the following fields:
+- `dryRun`: Describes if the request was invoked by `kubectl --dry-run`. This cannot be populated by Kubernetes for audit.
+- `kind`: The resource `kind`, `group`, `version` of the request object under evaluation.
+- `name`: The name of the request object under evaluation. It may be empty if the deployment expects the API server to generate a name for the requested resource.
+- `namespace`: The namespace of the request object under evaluation. Empty for cluster scoped objects.
+- `object`: The request object under evaluation to be created or modified.
+- `oldObject`: The original state of the request object under evaluation. This is only available for UPDATE operations.
+- `operation`: The operation for the request (e.g. CREATE, UPDATE). This cannot be populated by Kubernetes for audit.
+- `uid`: The request's unique identifier. This cannot be populated by Kubernetes for audit.
+- `userInfo`: The request's user's information such as `username`, `uid`, `groups`, `extra`. This cannot be populated by Kubernetes for audit.
+
+> **_NOTE_** For `input.review` fields above that cannot be populated by Kubernetes for audit reviews, the constraint templates that rely on them are not auditable. It is up to the rego author to handle the case where these fields are unset and empty in order to avoid every matching resource being reported as violating resources. 

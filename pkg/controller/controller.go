@@ -24,6 +24,7 @@ import (
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
@@ -46,6 +47,7 @@ type Injector interface {
 	InjectControllerSwitch(*watch.ControllerSwitch)
 	InjectTracker(tracker *readiness.Tracker)
 	InjectMutationSystem(mutationSystem *mutation.System)
+	InjectExpansionSystem(expansionSystem *expansion.System)
 	InjectProviderCache(providerCache *externaldata.ProviderCache)
 	Add(mgr manager.Manager) error
 }
@@ -56,6 +58,10 @@ type GetPodInjector interface {
 
 type GetProcessExcluderInjector interface {
 	InjectProcessExcluder(processExcluder *process.Excluder)
+}
+
+type WatchSetInjector interface {
+	InjectWatchSet(watchSet *watch.Set)
 }
 
 // Injectors is a list of adder structs that need injection. We can convert this
@@ -74,7 +80,9 @@ type Dependencies struct {
 	GetPod           func(context.Context) (*corev1.Pod, error)
 	ProcessExcluder  *process.Excluder
 	MutationSystem   *mutation.System
+	ExpansionSystem  *expansion.System
 	ProviderCache    *externaldata.ProviderCache
+	WatchSet         *watch.Set
 }
 
 type defaultPodGetter struct {
@@ -122,7 +130,7 @@ func (g *defaultPodGetter) GetPod(ctx context.Context) (*corev1.Pod, error) {
 }
 
 // AddToManager adds all Controllers to the Manager.
-func AddToManager(ctx context.Context, m manager.Manager, deps Dependencies) error {
+func AddToManager(m manager.Manager, deps *Dependencies) error {
 	if deps.GetPod == nil {
 		podGetter := &defaultPodGetter{
 			scheme: m.GetScheme(),
@@ -152,12 +160,16 @@ func AddToManager(ctx context.Context, m manager.Manager, deps Dependencies) err
 		a.InjectControllerSwitch(deps.ControllerSwitch)
 		a.InjectTracker(deps.Tracker)
 		a.InjectMutationSystem(deps.MutationSystem)
+		a.InjectExpansionSystem(deps.ExpansionSystem)
 		a.InjectProviderCache(deps.ProviderCache)
 		if a2, ok := a.(GetPodInjector); ok {
 			a2.InjectGetPod(deps.GetPod)
 		}
 		if a2, ok := a.(GetProcessExcluderInjector); ok {
 			a2.InjectProcessExcluder(deps.ProcessExcluder)
+		}
+		if a2, ok := a.(WatchSetInjector); ok {
+			a2.InjectWatchSet(deps.WatchSet)
 		}
 		if err := a.Add(m); err != nil {
 			return err

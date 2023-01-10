@@ -46,17 +46,17 @@ func walk(v Visitor, x interface{}) {
 	switch x := x.(type) {
 	case *Module:
 		Walk(w, x.Package)
-		for _, i := range x.Imports {
-			Walk(w, i)
+		for i := range x.Imports {
+			Walk(w, x.Imports[i])
 		}
-		for _, r := range x.Rules {
-			Walk(w, r)
+		for i := range x.Rules {
+			Walk(w, x.Rules[i])
 		}
-		for _, a := range x.Annotations {
-			Walk(w, a)
+		for i := range x.Annotations {
+			Walk(w, x.Annotations[i])
 		}
-		for _, c := range x.Comments {
-			Walk(w, c)
+		for i := range x.Comments {
+			Walk(w, x.Comments[i])
 		}
 	case *Package:
 		Walk(w, x.Path)
@@ -79,23 +79,21 @@ func walk(v Visitor, x interface{}) {
 			Walk(w, x.Value)
 		}
 	case Body:
-		for _, e := range x {
-			Walk(w, e)
+		for i := range x {
+			Walk(w, x[i])
 		}
 	case Args:
-		for _, t := range x {
-			Walk(w, t)
+		for i := range x {
+			Walk(w, x[i])
 		}
 	case *Expr:
 		switch ts := x.Terms.(type) {
-		case *SomeDecl:
+		case *Term, *SomeDecl, *Every:
 			Walk(w, ts)
 		case []*Term:
-			for _, t := range ts {
-				Walk(w, t)
+			for i := range ts {
+				Walk(w, ts[i])
 			}
-		case *Term:
-			Walk(w, ts)
 		}
 		for i := range x.With {
 			Walk(w, x.With[i])
@@ -106,8 +104,8 @@ func walk(v Visitor, x interface{}) {
 	case *Term:
 		Walk(w, x.Value)
 	case Ref:
-		for _, t := range x {
-			Walk(w, t)
+		for i := range x {
+			Walk(w, x[i])
 		}
 	case *object:
 		x.Foreach(func(k, vv *Term) {
@@ -133,9 +131,16 @@ func walk(v Visitor, x interface{}) {
 		Walk(w, x.Term)
 		Walk(w, x.Body)
 	case Call:
-		for _, t := range x {
-			Walk(w, t)
+		for i := range x {
+			Walk(w, x[i])
 		}
+	case *Every:
+		if x.Key != nil {
+			Walk(w, x.Key)
+		}
+		Walk(w, x.Value)
+		Walk(w, x.Domain)
+		Walk(w, x.Body)
 	}
 }
 
@@ -155,8 +160,8 @@ func WalkVars(x interface{}, f func(Var) bool) {
 // returns true, AST nodes under the last node will not be visited.
 func WalkClosures(x interface{}, f func(interface{}) bool) {
 	vis := &GenericVisitor{func(x interface{}) bool {
-		switch x.(type) {
-		case *ArrayComprehension, *ObjectComprehension, *SetComprehension:
+		switch x := x.(type) {
+		case *ArrayComprehension, *ObjectComprehension, *SetComprehension, *Every:
 			return f(x)
 		}
 		return false
@@ -277,17 +282,17 @@ func (vis *GenericVisitor) Walk(x interface{}) {
 	switch x := x.(type) {
 	case *Module:
 		vis.Walk(x.Package)
-		for _, i := range x.Imports {
-			vis.Walk(i)
+		for i := range x.Imports {
+			vis.Walk(x.Imports[i])
 		}
-		for _, r := range x.Rules {
-			vis.Walk(r)
+		for i := range x.Rules {
+			vis.Walk(x.Rules[i])
 		}
-		for _, a := range x.Annotations {
-			vis.Walk(a)
+		for i := range x.Annotations {
+			vis.Walk(x.Annotations[i])
 		}
-		for _, c := range x.Comments {
-			vis.Walk(c)
+		for i := range x.Comments {
+			vis.Walk(x.Comments[i])
 		}
 	case *Package:
 		vis.Walk(x.Path)
@@ -310,23 +315,21 @@ func (vis *GenericVisitor) Walk(x interface{}) {
 			vis.Walk(x.Value)
 		}
 	case Body:
-		for _, e := range x {
-			vis.Walk(e)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case Args:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *Expr:
 		switch ts := x.Terms.(type) {
-		case *SomeDecl:
+		case *Term, *SomeDecl, *Every:
 			vis.Walk(ts)
 		case []*Term:
-			for _, t := range ts {
-				vis.Walk(t)
+			for i := range ts {
+				vis.Walk(ts[i])
 			}
-		case *Term:
-			vis.Walk(ts)
 		}
 		for i := range x.With {
 			vis.Walk(x.With[i])
@@ -337,8 +340,8 @@ func (vis *GenericVisitor) Walk(x interface{}) {
 	case *Term:
 		vis.Walk(x.Value)
 	case Ref:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *object:
 		x.Foreach(func(k, v *Term) {
@@ -350,8 +353,9 @@ func (vis *GenericVisitor) Walk(x interface{}) {
 			vis.Walk(t)
 		})
 	case Set:
-		for _, t := range x.Slice() {
-			vis.Walk(t)
+		xSlice := x.Slice()
+		for i := range xSlice {
+			vis.Walk(xSlice[i])
 		}
 	case *ArrayComprehension:
 		vis.Walk(x.Term)
@@ -364,9 +368,16 @@ func (vis *GenericVisitor) Walk(x interface{}) {
 		vis.Walk(x.Term)
 		vis.Walk(x.Body)
 	case Call:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
+	case *Every:
+		if x.Key != nil {
+			vis.Walk(x.Key)
+		}
+		vis.Walk(x.Value)
+		vis.Walk(x.Domain)
+		vis.Walk(x.Body)
 	}
 }
 
@@ -398,17 +409,17 @@ func (vis *BeforeAfterVisitor) Walk(x interface{}) {
 	switch x := x.(type) {
 	case *Module:
 		vis.Walk(x.Package)
-		for _, i := range x.Imports {
-			vis.Walk(i)
+		for i := range x.Imports {
+			vis.Walk(x.Imports[i])
 		}
-		for _, r := range x.Rules {
-			vis.Walk(r)
+		for i := range x.Rules {
+			vis.Walk(x.Rules[i])
 		}
-		for _, a := range x.Annotations {
-			vis.Walk(a)
+		for i := range x.Annotations {
+			vis.Walk(x.Annotations[i])
 		}
-		for _, c := range x.Comments {
-			vis.Walk(c)
+		for i := range x.Comments {
+			vis.Walk(x.Comments[i])
 		}
 	case *Package:
 		vis.Walk(x.Path)
@@ -422,32 +433,34 @@ func (vis *BeforeAfterVisitor) Walk(x interface{}) {
 			vis.Walk(x.Else)
 		}
 	case *Head:
-		vis.Walk(x.Name)
-		vis.Walk(x.Args)
-		if x.Key != nil {
-			vis.Walk(x.Key)
+		if len(x.Reference) > 0 {
+			vis.Walk(x.Reference)
+		} else {
+			vis.Walk(x.Name)
+			if x.Key != nil {
+				vis.Walk(x.Key)
+			}
 		}
+		vis.Walk(x.Args)
 		if x.Value != nil {
 			vis.Walk(x.Value)
 		}
 	case Body:
-		for _, e := range x {
-			vis.Walk(e)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case Args:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *Expr:
 		switch ts := x.Terms.(type) {
-		case *SomeDecl:
+		case *Term, *SomeDecl, *Every:
 			vis.Walk(ts)
 		case []*Term:
-			for _, t := range ts {
-				vis.Walk(t)
+			for i := range ts {
+				vis.Walk(ts[i])
 			}
-		case *Term:
-			vis.Walk(ts)
 		}
 		for i := range x.With {
 			vis.Walk(x.With[i])
@@ -458,8 +471,8 @@ func (vis *BeforeAfterVisitor) Walk(x interface{}) {
 	case *Term:
 		vis.Walk(x.Value)
 	case Ref:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *object:
 		x.Foreach(func(k, v *Term) {
@@ -471,8 +484,9 @@ func (vis *BeforeAfterVisitor) Walk(x interface{}) {
 			vis.Walk(t)
 		})
 	case Set:
-		for _, t := range x.Slice() {
-			vis.Walk(t)
+		xSlice := x.Slice()
+		for i := range xSlice {
+			vis.Walk(xSlice[i])
 		}
 	case *ArrayComprehension:
 		vis.Walk(x.Term)
@@ -485,9 +499,16 @@ func (vis *BeforeAfterVisitor) Walk(x interface{}) {
 		vis.Walk(x.Term)
 		vis.Walk(x.Body)
 	case Call:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
+	case *Every:
+		if x.Key != nil {
+			vis.Walk(x.Key)
+		}
+		vis.Walk(x.Value)
+		vis.Walk(x.Domain)
+		vis.Walk(x.Body)
 	}
 }
 
@@ -527,6 +548,8 @@ func (vis *VarVisitor) Vars() VarSet {
 	return vis.vars
 }
 
+// visit determines if the VarVisitor will recurse into x: if it returns `true`,
+// the visitor will _skip_ that branch of the AST
 func (vis *VarVisitor) visit(v interface{}) bool {
 	if vis.params.SkipObjectKeys {
 		if o, ok := v.(Object); ok {
@@ -538,16 +561,23 @@ func (vis *VarVisitor) visit(v interface{}) bool {
 	}
 	if vis.params.SkipRefHead {
 		if r, ok := v.(Ref); ok {
-			for _, t := range r[1:] {
-				vis.Walk(t)
+			rSlice := r[1:]
+			for i := range rSlice {
+				vis.Walk(rSlice[i])
 			}
 			return true
 		}
 	}
 	if vis.params.SkipClosures {
-		switch v.(type) {
+		switch v := v.(type) {
 		case *ArrayComprehension, *ObjectComprehension, *SetComprehension:
 			return true
+		case *Expr:
+			if ev, ok := v.Terms.(*Every); ok {
+				vis.Walk(ev.Domain)
+				// We're _not_ walking ev.Body -- that's the closure here
+				return true
+			}
 		}
 	}
 	if vis.params.SkipWithTarget {
@@ -565,14 +595,15 @@ func (vis *VarVisitor) visit(v interface{}) bool {
 		switch v := v.(type) {
 		case *Expr:
 			if terms, ok := v.Terms.([]*Term); ok {
-				for _, t := range terms[0].Value.(Ref)[1:] {
-					vis.Walk(t)
+				termSlice := terms[0].Value.(Ref)[1:]
+				for i := range termSlice {
+					vis.Walk(termSlice[i])
 				}
 				for i := 1; i < len(terms); i++ {
 					vis.Walk(terms[i])
 				}
-				for _, w := range v.With {
-					vis.Walk(w)
+				for i := range v.With {
+					vis.Walk(v.With[i])
 				}
 				return true
 			}
@@ -583,6 +614,22 @@ func (vis *VarVisitor) visit(v interface{}) bool {
 			}
 			for i := 1; i < len(v); i++ {
 				vis.Walk(v[i])
+			}
+			return true
+		case *With:
+			if ref, ok := v.Target.Value.(Ref); ok {
+				refSlice := ref[1:]
+				for i := range refSlice {
+					vis.Walk(refSlice[i])
+				}
+			}
+			if ref, ok := v.Value.Value.(Ref); ok {
+				refSlice := ref[1:]
+				for i := range refSlice {
+					vis.Walk(refSlice[i])
+				}
+			} else {
+				vis.Walk(v.Value)
 			}
 			return true
 		}
@@ -604,14 +651,14 @@ func (vis *VarVisitor) Walk(x interface{}) {
 	switch x := x.(type) {
 	case *Module:
 		vis.Walk(x.Package)
-		for _, i := range x.Imports {
-			vis.Walk(i)
+		for i := range x.Imports {
+			vis.Walk(x.Imports[i])
 		}
-		for _, r := range x.Rules {
-			vis.Walk(r)
+		for i := range x.Rules {
+			vis.Walk(x.Rules[i])
 		}
-		for _, c := range x.Comments {
-			vis.Walk(c)
+		for i := range x.Comments {
+			vis.Walk(x.Comments[i])
 		}
 	case *Package:
 		vis.Walk(x.Path)
@@ -625,32 +672,35 @@ func (vis *VarVisitor) Walk(x interface{}) {
 			vis.Walk(x.Else)
 		}
 	case *Head:
-		vis.Walk(x.Name)
-		vis.Walk(x.Args)
-		if x.Key != nil {
-			vis.Walk(x.Key)
+		if len(x.Reference) > 0 {
+			vis.Walk(x.Reference)
+		} else {
+			vis.Walk(x.Name)
+			if x.Key != nil {
+				vis.Walk(x.Key)
+			}
 		}
+		vis.Walk(x.Args)
+
 		if x.Value != nil {
 			vis.Walk(x.Value)
 		}
 	case Body:
-		for _, e := range x {
-			vis.Walk(e)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case Args:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *Expr:
 		switch ts := x.Terms.(type) {
-		case *SomeDecl:
+		case *Term, *SomeDecl, *Every:
 			vis.Walk(ts)
 		case []*Term:
-			for _, t := range ts {
-				vis.Walk(t)
+			for i := range ts {
+				vis.Walk(ts[i])
 			}
-		case *Term:
-			vis.Walk(ts)
 		}
 		for i := range x.With {
 			vis.Walk(x.With[i])
@@ -661,8 +711,8 @@ func (vis *VarVisitor) Walk(x interface{}) {
 	case *Term:
 		vis.Walk(x.Value)
 	case Ref:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
 	case *object:
 		x.Foreach(func(k, v *Term) {
@@ -674,8 +724,9 @@ func (vis *VarVisitor) Walk(x interface{}) {
 			vis.Walk(t)
 		})
 	case Set:
-		for _, t := range x.Slice() {
-			vis.Walk(t)
+		xSlice := x.Slice()
+		for i := range xSlice {
+			vis.Walk(xSlice[i])
 		}
 	case *ArrayComprehension:
 		vis.Walk(x.Term)
@@ -688,8 +739,15 @@ func (vis *VarVisitor) Walk(x interface{}) {
 		vis.Walk(x.Term)
 		vis.Walk(x.Body)
 	case Call:
-		for _, t := range x {
-			vis.Walk(t)
+		for i := range x {
+			vis.Walk(x[i])
 		}
+	case *Every:
+		if x.Key != nil {
+			vis.Walk(x.Key)
+		}
+		vis.Walk(x.Value)
+		vis.Walk(x.Domain)
+		vis.Walk(x.Body)
 	}
 }

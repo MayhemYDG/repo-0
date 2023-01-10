@@ -267,22 +267,35 @@ __namespace_exclusion_test() {
 }
 
 @test "external data provider crd is established" {
-  if [ -z $ENABLE_EXTERNAL_DATA_TESTS ]; then
-    skip "skipping external data tests"
-  fi
   wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl wait --for condition=established --timeout=60s crd/providers.externaldata.gatekeeper.sh"
 }
 
-@test "gatekeeper external data validation test" {
-  if [ -z $ENABLE_EXTERNAL_DATA_TESTS ]; then
-    skip "skipping external data validation tests"
+@test "gatekeeper external data validation and mutation test" {
+  if [ ! -f test/externaldata/dummy-provider/certs/ca.crt ]; then
+    echo "Missing dummy-provider's CA cert. Please run test/externaldata/dummy-provider/scripts/generate-tls-certificate.sh to generate it."
+    exit 1
   fi
 
-  # deployment, service and provider for dummy-provider
-  run kubectl apply -f test/externaldata/dummy-provider/manifest
-  assert_success
-  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl wait --for=condition=Ready --timeout=60s pod -l run=dummy-provider -n dummy-provider"
+  tmp=$(mktemp -d)
 
+  # inject caBundle into the provider YAML
+  cat <<EOF > ${tmp}/provider.yaml
+$(cat test/externaldata/dummy-provider/manifest/provider.yaml)
+  caBundle: $(cat test/externaldata/dummy-provider/certs/ca.crt | base64 | tr -d '\n')
+EOF
+  # substitute namespace in the provider YAML for Helm custom namespace test
+  sed -i "s/gatekeeper-system/${GATEKEEPER_NAMESPACE}/g" ${tmp}/provider.yaml
+
+  run kubectl apply -f ${tmp}/provider.yaml
+  assert_success
+  kubectl apply -f test/externaldata/dummy-provider/manifest/deployment.yaml -n ${GATEKEEPER_NAMESPACE}
+  assert_success
+  kubectl apply -f test/externaldata/dummy-provider/manifest/service.yaml -n ${GATEKEEPER_NAMESPACE}
+  assert_success
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl wait --for=condition=Ready --timeout=60s pod -l run=dummy-provider -n ${GATEKEEPER_NAMESPACE}"
+
+  # validation test
+  echo '# external data - validation test' >&3
   kubectl apply -f test/externaldata/dummy-provider/policy/template.yaml
   wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl apply -f test/externaldata/dummy-provider/policy/constraint.yaml"
   wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "constraint_enforced k8sexternaldata dummy"
@@ -300,7 +313,127 @@ __namespace_exclusion_test() {
   run kubectl apply -f test/externaldata/dummy-provider/policy/examples/valid.yaml
   assert_success
 
+  # mutation test
+  echo '# external data - mutation test' >&3
+  run kubectl apply -f test/externaldata/dummy-provider/mutation/valid.yaml
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "mutator_enforced AssignMetadata annotate-owner"
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "mutator_enforced Assign a-sidecar-injection"
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "mutator_enforced Assign b-assign-image"
+
+  run kubectl run nginx --image=nginx --dry-run=server --output json
+  assert_success
+  assert_match "kubernetes-admin_valid" "$(jq -r '.metadata.annotations["external-data-username"]' <<< ${output})"
+  assert_match "nginx_valid" "$(jq -r '.spec.containers[0].image' <<< ${output})"
+  assert_match "busybox_valid" "$(jq -r '.spec.containers[1].image' <<< ${output})"
+
+  run kubectl apply -f test/externaldata/dummy-provider/mutation/invalid_assignmetadata.yaml
+  assert_match 'only username data source is supported' "${output}"
+  assert_match 'invalid location' "${output}"
+  assert_failure
+
+  run kubectl apply -f test/externaldata/dummy-provider/mutation/invalid_assign.yaml
+  assert_match '`default` must not be empty when `failurePolicy` is set to `UseDefault`' "${output}"
+  assert_match 'cannot assign external data response to a list' "${output}"
+  assert_failure
+
+  # simulate key error
+  run kubectl run busybox --image=error_busybox --dry-run=server --output json
+  assert_match 'error_busybox_invalid' "${output}"
+  assert_failure
+
+  # simulate system error
+  run kubectl run busybox --image=busybox:latest_systemError --dry-run=server --output json
+  assert_match 'testing system error' "${output}"
+  assert_failure
+
+  # schema conflict test
+  run kubectl apply -f test/externaldata/dummy-provider/mutation/schema_conflict.yaml
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "mutator_enforced Assign schema-conflict"
+
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl get assign schema-conflict -ojson | jq -r -e '.status.byPod[0].errors[0]'"
+  run kubectl get assign schema-conflict -o jsonpath="{.status}"
+  assert_match 'Assign.mutations.gatekeeper.sh /b-assign-image,Assign.mutations.gatekeeper.sh /schema-conflict' "${output}"
+  assert_match 'ErrConflictingSchema' "${output}"
+
   kubectl delete --ignore-not-found -f test/externaldata/dummy-provider/manifest
+  kubectl delete --ignore-not-found -f test/externaldata/dummy-provider/mutation
   kubectl delete --ignore-not-found deploy error-deployment valid-deployment system-error-deployment
   kubectl delete --ignore-not-found constrainttemplate k8sexternaldata
+}
+
+__expansion_audit_test() {
+  # we expect 2 violations; 1 for the deployment, 1 for the replicaset
+  local expected=2
+
+  local cstr="$(kubectl get k8srequiredlabels.constraints.gatekeeper.sh loadbalancers-must-have-env -ojson)"
+  if [[ $? -ne 0 ]]; then
+    echo "error retrieving constraint"
+    return 1
+  fi
+
+  echo "${cstr}"
+
+  local total_violations=$(echo "${cstr}" | jq '.status.totalViolations')
+  if [[ "${total_violations}" -ne "${expected}" ]]; then
+    echo "totalViolations is ${total_violations}, wanted ${expected}"
+    return 2
+  fi
+
+  local audit_matches=$(echo "${cstr}" | jq '.status.violations[].message' | grep -i '[Implied by expand-deployments]' | wc -l)
+  if [[ "${audit_matches}" -ne "${expected}" ]]; then
+    echo "violations from expand-deployments count is ${audit_matches}, wanted ${expected}"
+    return 3
+  fi
+}
+
+@test "gatekeeper expansion test" {
+  if [ -z $ENABLE_GENERATOR_EXPANSION_TESTS ]; then
+    skip "skipping generator expansion tests"
+  fi
+
+  # setup ns, TemplateExpansion and Constraints
+  run kubectl create namespace loadbalancers
+  run kubectl apply -f test/expansion/expand_deployments.yaml
+  assert_success
+  run kubectl apply -f test/expansion/k8srequiredlabels_ct.yaml
+  run kubectl apply -f test/expansion/loadbalancers_must_have_env.yaml
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "constraint_enforced k8srequiredlabels loadbalancers-must-have-env"
+
+  # assert that creating deployment without 'env' label is rejected
+  run kubectl apply -f test/expansion/deployment_no_label.yaml
+  assert_failure
+  # a deployment with the required label should succeed
+  run kubectl apply -f test/expansion/deployment_with_label.yaml
+  assert_success
+  run kubectl delete -f test/expansion/deployment_with_label.yaml
+
+  # create deployment without 'env' label and assignmetadata to add 'env'
+  run kubectl apply -f test/expansion/assignmeta_env.yaml
+  # wait for mutation to be registered by controllers
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "mutator_enforced AssignMetadata add-env-label"
+  # now that mutation would add the 'env' label, the deployment describes a compliant pod
+  # and the request should succeed
+  run kubectl apply -f test/expansion/deployment_no_label.yaml
+  assert_success
+  run kubectl delete -f test/expansion/deployment_no_label.yaml
+  run kubectl delete -f test/expansion/assignmeta_env.yaml
+
+  # test enforcement action override with 'warn'
+  run kubectl delete -f test/expansion/expand_deployments.yaml
+  run kubectl apply -f test/expansion/warn_expand_deployments.yaml
+  # creating a violating deployment should only 'warn' now
+  run kubectl apply -f test/expansion/deployment_no_label.yaml
+  assert_success
+  # with a violating deployment on cluster, test that audit produces expansion violations
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "__expansion_audit_test"
+
+  # cleanup
+  run kubectl delete --ignore-not-found namespace loadbalancers
+  run kubectl delete --ignore-not-found -f test/expansion/expand_deployments.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/warn_expand_deployments.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/k8srequiredlabels_ct.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/loadbalancers_must_have_env.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/assignmeta_env.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/deployment_no_label.yaml
+  run kubectl delete --ignore-not-found -f test/expansion/deployment_with_label.yaml
 }

@@ -1,6 +1,8 @@
 # Staging and temporary dirs
 .staging/
 /.tmp
+go.work
+go.work.sum
 
 # Binaries for programs and plugins
 *.exe
@@ -350,3 +352,13 @@ __pycache__/
 
 # always include vendor directory
 !/vendor/**
+
+# tilt
+tilt-settings.json
+.tiltbuild
+
+# cluster-test
+/cluster-test
+
+# dummy provider's certificate directory
+test/externaldata/dummy-provider/certs/

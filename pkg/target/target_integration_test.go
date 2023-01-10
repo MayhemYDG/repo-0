@@ -7,6 +7,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -39,7 +40,6 @@ spec:
         }
 `
 )
-const testResourceName = "test-resource"
 
 type buildArg func(*unstructured.Unstructured)
 
@@ -103,6 +103,14 @@ func setScope(scope string) buildArg {
 	}
 }
 
+func setSource(source string) buildArg {
+	return func(obj *unstructured.Unstructured) {
+		if err := unstructured.SetNestedField(obj.Object, source, "spec", "match", "source"); err != nil {
+			panic(err)
+		}
+	}
+}
+
 func setName(name string) buildArg {
 	return func(obj *unstructured.Unstructured) {
 		if err := unstructured.SetNestedField(obj.Object, name, "spec", "match", "name"); err != nil {
@@ -121,18 +129,28 @@ func makeConstraint(o ...buildArg) *unstructured.Unstructured {
 	return u
 }
 
-func makeResource(group, kind string, labels ...map[string]string) *unstructured.Unstructured {
-	u := &unstructured.Unstructured{}
-	u.SetName(testResourceName)
-	u.SetGroupVersionKind(schema.GroupVersionKind{Group: group, Version: "v1", Kind: kind})
+func makeResource(gvk schema.GroupVersionKind, name string, labels ...map[string]string) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{
+		Object: map[string]interface{}{},
+	}
+	u.SetName(name)
+	u.SetGroupVersionKind(gvk)
+
 	if len(labels) > 0 {
 		u.SetLabels(labels[0])
 	}
 	return u
 }
 
+func makeNamespacedResource(gvk schema.GroupVersionKind, namespace, name string, labels ...map[string]string) *unstructured.Unstructured {
+	u := makeResource(gvk, name, labels...)
+	u.SetNamespace(namespace)
+	return u
+}
+
 func makeNamespace(name string, labels ...map[string]string) *corev1.Namespace {
 	ns := &corev1.Namespace{}
+	ns.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Namespace"))
 	ns.Name = name
 	if len(labels) > 0 {
 		ns.Labels = labels[0]
@@ -150,105 +168,105 @@ func TestConstraintEnforcement(t *testing.T) {
 	}{
 		{
 			name:       "match deny all",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(),
 			allowed:    false,
 		},
 		{
 			name:       "match namespace",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setNamespaceName("my-ns")),
 			allowed:    false,
 		},
 		{
 			name:       "no match namespace",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setNamespaceName("not-my-ns")),
 			allowed:    true,
 		},
 		{
 			name:       "match excludedNamespaces",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setExcludedNamespaceName("my-ns")),
 			allowed:    true,
 		},
 		{
 			name:       "no match excludedNamespaces",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setExcludedNamespaceName("not-my-ns")),
 			allowed:    false,
 		},
 		{
 			name:       "match labelselector",
-			obj:        makeResource("some", "Thing", map[string]string{"a": "label"}),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"a": "label"}),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setLabelSelector("a", "label")),
 			allowed:    false,
 		},
 		{
 			name:       "no match labelselector",
-			obj:        makeResource("some", "Thing", map[string]string{"a": "label"}),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"a": "label"}),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setLabelSelector("different", "label")),
 			allowed:    true,
 		},
 		{
 			name:       "match nsselector",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns", map[string]string{"a": "label"}),
 			constraint: makeConstraint(setNamespaceSelector("a", "label")),
 			allowed:    false,
 		},
 		{
 			name:       "no match nsselector",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns", map[string]string{"a": "label"}),
 			constraint: makeConstraint(setNamespaceSelector("different", "label")),
 			allowed:    true,
 		},
 		{
 			name:       "match kinds",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setKinds([]string{"some"}, []string{"Thing"})),
 			allowed:    false,
 		},
 		{
 			name:       "no match kinds",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setKinds([]string{"different"}, []string{"Thing"})),
 			allowed:    true,
 		},
 		{
 			name:       "match name",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
-			constraint: makeConstraint(setName(testResourceName)),
+			constraint: makeConstraint(setName("foo")),
 			allowed:    false,
 		},
 		{
 			name:       "no match name",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setName("other-name")),
 			allowed:    true,
 		},
 		{
 			name:       "match name wildcard",
-			obj:        makeResource("some", "Thing"),
+			obj:        makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "test-resource"),
 			ns:         makeNamespace("my-ns"),
 			constraint: makeConstraint(setName("test-*")),
 			allowed:    false,
 		},
 		{
 			name: "match everything",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -260,7 +278,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything with scope as wildcard",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -273,7 +291,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything with scope as namespaced",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -286,7 +304,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything with scope as cluster",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -299,7 +317,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything but kind",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"different"}, []string{"Thing"}),
@@ -311,7 +329,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything but namespace",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -323,7 +341,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything but labelselector",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -335,7 +353,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything but nsselector",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			ns:   makeNamespace("my-ns", map[string]string{"ns": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
@@ -347,7 +365,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything cluster scoped",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
 				setNamespaceName("my-ns"),
@@ -358,7 +376,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything cluster scoped wildcard as scope",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
 				setScope("*"),
@@ -370,7 +388,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "do not match everything cluster scoped namespaced as scope",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
 				setScope("Namespaced"),
@@ -382,7 +400,7 @@ func TestConstraintEnforcement(t *testing.T) {
 		},
 		{
 			name: "match everything cluster scoped with cluster as scope",
-			obj:  makeResource("some", "Thing", map[string]string{"obj": "label"}),
+			obj:  makeResource(schema.GroupVersionKind{Group: "some", Kind: "Thing"}, "foo", map[string]string{"obj": "label"}),
 			constraint: makeConstraint(
 				setKinds([]string{"some"}, []string{"Thing"}),
 				setScope("Cluster"),
@@ -397,7 +415,11 @@ func TestConstraintEnforcement(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			target := &K8sValidationTarget{}
-			driver := local.New(local.Tracing(true))
+			driver, err := local.New(local.Tracing(true))
+			if err != nil {
+				t.Fatalf("unable to set up Driver: %v", err)
+			}
+
 			c, err := constraintclient.NewClient(constraintclient.Targets(target), constraintclient.Driver(driver))
 			if err != nil {
 				t.Fatalf("unable to set up OPA client: %s", err)
@@ -407,7 +429,8 @@ func TestConstraintEnforcement(t *testing.T) {
 			if err := yaml.Unmarshal([]byte(testTemplate), tmpl); err != nil {
 				t.Fatalf("unable to unmarshal template: %s", err)
 			}
-			if _, err := c.AddTemplate(tmpl); err != nil {
+			ctx := context.Background()
+			if _, err := c.AddTemplate(ctx, tmpl); err != nil {
 				t.Fatalf("unable to add template: %s", err)
 			}
 			if _, err := c.AddConstraint(context.Background(), tc.constraint); err != nil {
@@ -434,16 +457,16 @@ func TestConstraintEnforcement(t *testing.T) {
 			}
 
 			fullReq := &AugmentedReview{Namespace: tc.ns, AdmissionRequest: req}
-			res, err := c.Review(context.Background(), fullReq, constraintclient.Tracing(true))
+			res, err := c.Review(ctx, fullReq, drivers.Tracing(true))
 			if err != nil {
 				t.Errorf("Error reviewing request: %s", err)
 			}
 			if (len(res.Results()) == 0) != tc.allowed {
-				dump, err := c.Dump(context.Background())
+				dump, err := c.Dump(ctx)
 				if err != nil {
 					t.Logf("error dumping: %s", err)
 				}
-				t.Errorf("allowed = %v, expected %v:\n%s\n\n%s", !tc.allowed, tc.allowed, res.TraceDump(), dump)
+				t.Fatalf("allowed = %v, expected %v:\n%s\n\n%s", !tc.allowed, tc.allowed, res.TraceDump(), dump)
 			}
 
 			// also test oldObject
@@ -463,12 +486,12 @@ func TestConstraintEnforcement(t *testing.T) {
 			}
 
 			fullReq2 := &AugmentedReview{Namespace: tc.ns, AdmissionRequest: req2}
-			res2, err := c.Review(context.Background(), fullReq2, constraintclient.Tracing(true))
+			res2, err := c.Review(ctx, fullReq2, drivers.Tracing(true))
 			if err != nil {
 				t.Errorf("Error reviewing OldObject request: %s", err)
 			}
 			if (len(res2.Results()) == 0) != tc.allowed {
-				dump, err := c.Dump(context.Background())
+				dump, err := c.Dump(ctx)
 				if err != nil {
 					t.Logf("error dumping: %s", err)
 				}
@@ -476,12 +499,12 @@ func TestConstraintEnforcement(t *testing.T) {
 			}
 
 			fullReq3 := &AugmentedUnstructured{Namespace: tc.ns, Object: *tc.obj}
-			res3, err := c.Review(context.Background(), fullReq3, constraintclient.Tracing(true))
+			res3, err := c.Review(ctx, fullReq3, drivers.Tracing(true))
 			if err != nil {
 				t.Errorf("Error reviewing AugmentedUnstructured request: %s", err)
 			}
 			if (len(res3.Results()) == 0) != tc.allowed {
-				dump, err := c.Dump(context.Background())
+				dump, err := c.Dump(ctx)
 				if err != nil {
 					t.Logf("error dumping: %s", err)
 				}

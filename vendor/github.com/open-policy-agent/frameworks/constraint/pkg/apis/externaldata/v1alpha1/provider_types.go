@@ -25,15 +25,21 @@ type ProviderSpec struct {
 	URL string `json:"url,omitempty"`
 	// Timeout is the timeout when querying the provider.
 	Timeout int `json:"timeout,omitempty"`
+	// CABundle is a base64-encoded string that contains the TLS CA bundle in PEM format.
+	// It is used to verify the signature of the provider's certificate.
+	CABundle string `json:"caBundle,omitempty"`
 }
 
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:deprecatedversion:warning="externaldata.gatekeeper.sh/v1alpha1 is deprecated. Use externaldata.gatekeeper.sh/v1beta1 instead."
 
 // Provider is the Schema for the Provider API
 // +k8s:openapi-gen=true
+// +kubebuilder:storageversion
+// +k8s:conversion-gen-external-types=github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata
 type Provider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

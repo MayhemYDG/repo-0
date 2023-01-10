@@ -1,7 +1,6 @@
 package modifyset
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,20 +8,9 @@ import (
 	"github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 )
-
-func makeValue(v interface{}) runtime.RawExtension {
-	v2 := map[string]interface{}{
-		"value": v,
-	}
-	j, err := json.Marshal(v2)
-	if err != nil {
-		panic(err)
-	}
-	return runtime.RawExtension{Raw: j}
-}
 
 func modifyset(value interface{}, location string) *unversioned.ModifySet {
 	result := &unversioned.ModifySet{
@@ -34,8 +22,9 @@ func modifyset(value interface{}, location string) *unversioned.ModifySet {
 			}},
 			Location: location,
 			Parameters: unversioned.ModifySetParameters{
+				Operation: unversioned.MergeOp,
 				Values: unversioned.Values{
-					FromList: []interface{}{makeValue(value)},
+					FromList: []interface{}{value},
 				},
 			},
 		},
@@ -57,14 +46,14 @@ func benchmarkModifySetMutator(b *testing.B, n int) {
 	for i := 0; i < n; i++ {
 		p[i] = "spec"
 	}
-	_, err = mutator.Mutate(obj)
+	_, err = mutator.Mutate(&types.Mutable{Object: obj})
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = mutator.Mutate(obj)
+		_, _ = mutator.Mutate(&types.Mutable{Object: obj})
 	}
 }
 
@@ -87,14 +76,14 @@ func benchmarkNoModifySetMutator(b *testing.B, n int) {
 	for i := 0; i < n; i++ {
 		p[i] = "spec"
 	}
-	_, err = mutator.Mutate(obj)
+	_, err = mutator.Mutate(&types.Mutable{Object: obj})
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = mutator.Mutate(obj)
+		_, _ = mutator.Mutate(&types.Mutable{Object: obj})
 	}
 }
 

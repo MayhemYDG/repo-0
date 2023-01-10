@@ -6,11 +6,16 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/target"
 )
 
-func NewOPAClient() (Client, error) {
-	driver := local.New(local.Tracing(false))
+func NewOPAClient(includeTrace bool) (Client, error) {
+	driver, err := local.New(local.Tracing(includeTrace))
+	if err != nil {
+		return nil, err
+	}
+
 	c, err := constraintclient.NewClient(constraintclient.Targets(&target.K8sValidationTarget{}), constraintclient.Driver(driver))
 	if err != nil {
 		return nil, err
 	}
-	return c, err
+
+	return c, nil
 }
