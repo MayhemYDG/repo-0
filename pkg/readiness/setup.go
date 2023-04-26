@@ -25,18 +25,29 @@ import (
 // SetupTracker sets up a readiness tracker and registers it to run under control of the
 // provided Manager object.
 // NOTE: Must be called _before_ the manager is started.
-func SetupTracker(mgr manager.Manager, mutationEnabled bool, externalDataEnabled bool) (*Tracker, error) {
-	tracker := NewTracker(mgr.GetAPIReader(), mutationEnabled, externalDataEnabled)
+func SetupTracker(mgr manager.Manager, mutationEnabled, externalDataEnabled, expansionEnabled bool) (*Tracker, error) {
+	tracker, err := SetupTrackerNoReadyz(mgr, mutationEnabled, externalDataEnabled, expansionEnabled)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := mgr.AddReadyzCheck("tracker", tracker.CheckSatisfied); err != nil {
+		return nil, fmt.Errorf("registering readiness check: %w", err)
+	}
+
+	return tracker, nil
+}
+
+// SetupTrackerNoReadyz sets up a readiness tracker and registers it to run under control of the
+// provided Manager object without instantiating /readyz (used for testing).
+func SetupTrackerNoReadyz(mgr manager.Manager, mutationEnabled, externalDataEnabled, expansionEnabled bool) (*Tracker, error) {
+	tracker := NewTracker(mgr.GetAPIReader(), mutationEnabled, externalDataEnabled, expansionEnabled)
 
 	err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		return tracker.Run(ctx)
 	}))
 	if err != nil {
 		return nil, fmt.Errorf("adding tracker to manager: %w", err)
-	}
-
-	if err := mgr.AddReadyzCheck("tracker", tracker.CheckSatisfied); err != nil {
-		return nil, fmt.Errorf("registering readiness check: %w", err)
 	}
 
 	return tracker, nil

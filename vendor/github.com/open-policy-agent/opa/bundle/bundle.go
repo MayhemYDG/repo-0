@@ -127,8 +127,9 @@ type Manifest struct {
 
 // WasmResolver maps a wasm module to an entrypoint ref.
 type WasmResolver struct {
-	Entrypoint string `json:"entrypoint,omitempty"`
-	Module     string `json:"module,omitempty"`
+	Entrypoint  string             `json:"entrypoint,omitempty"`
+	Module      string             `json:"module,omitempty"`
+	Annotations []*ast.Annotations `json:"annotations,omitempty"`
 }
 
 // Init initializes the manifest. If you instantiate a manifest
@@ -164,6 +165,10 @@ func (m Manifest) Equal(other Manifest) bool {
 	}
 
 	return m.equalWasmResolversAndRoots(other)
+}
+
+func (m Manifest) Empty() bool {
+	return m.Equal(Manifest{})
 }
 
 // Copy returns a deep copy of the manifest.
@@ -210,12 +215,43 @@ func (m Manifest) equalWasmResolversAndRoots(other Manifest) bool {
 	}
 
 	for i := 0; i < len(m.WasmResolvers); i++ {
-		if m.WasmResolvers[i] != other.WasmResolvers[i] {
+		if !m.WasmResolvers[i].Equal(&other.WasmResolvers[i]) {
 			return false
 		}
 	}
 
 	return m.rootSet().Equal(other.rootSet())
+}
+
+func (wr *WasmResolver) Equal(other *WasmResolver) bool {
+	if wr == nil && other == nil {
+		return true
+	}
+
+	if wr == nil || other == nil {
+		return false
+	}
+
+	if wr.Module != other.Module {
+		return false
+	}
+
+	if wr.Entrypoint != other.Entrypoint {
+		return false
+	}
+
+	annotLen := len(wr.Annotations)
+	if annotLen != len(other.Annotations) {
+		return false
+	}
+
+	for i := 0; i < annotLen; i++ {
+		if wr.Annotations[i].Compare(other.Annotations[i]) != 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 type stringSet map[string]struct{}
@@ -849,7 +885,7 @@ func (w *Writer) writePlan(tw *tar.Writer, bundle Bundle) error {
 
 func writeManifest(tw *tar.Writer, bundle Bundle) error {
 
-	if bundle.Manifest.Equal(Manifest{}) {
+	if bundle.Manifest.Empty() {
 		return nil
 	}
 
@@ -926,7 +962,7 @@ func hashBundleFiles(hash SignatureHasher, b *Bundle) ([]FileInfo, error) {
 	// parse the manifest into a JSON structure;
 	// then recursively order the fields of all objects alphabetically and then apply
 	// the hash function to result to compute the hash.
-	if !b.Manifest.Equal(Manifest{}) {
+	if !b.Manifest.Empty() {
 		mbs, err := json.Marshal(b.Manifest)
 		if err != nil {
 			return files, err
@@ -1218,6 +1254,10 @@ func Merge(bundles []*Bundle) (*Bundle, error) {
 
 	}
 
+	if result.Data == nil {
+		result.Data = map[string]interface{}{}
+	}
+
 	result.Manifest.Roots = &roots
 
 	if err := result.Manifest.validateAndInjectDefaults(result); err != nil {
@@ -1282,7 +1322,7 @@ func getNormalizedPath(path string) []string {
 	// other hand, if the path is empty, filepath.Dir will return '.'.
 	// Note: filepath.Dir can return paths with '\' separators, always use
 	// filepath.ToSlash to keep them normalized.
-	dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
+	dirpath := strings.TrimLeft(normalizePath(filepath.Dir(path)), "/.")
 	var key []string
 	if dirpath != "" {
 		key = strings.Split(dirpath, "/")
@@ -1319,7 +1359,9 @@ func modulePathWithPrefix(bundleName string, modulePath string) string {
 		prefix = filepath.Join(parsed.Host, parsed.Path)
 	}
 
-	return filepath.Join(prefix, modulePath)
+	// Note: filepath.Join can return paths with '\' separators, always use
+	// filepath.ToSlash to keep them normalized.
+	return normalizePath(filepath.Join(prefix, modulePath))
 }
 
 // IsStructuredDoc checks if the file name equals a structured file extension ex. ".json"
@@ -1390,4 +1432,8 @@ func readFile(f *Descriptor, sizeLimitBytes int64) (bytes.Buffer, error) {
 	}
 
 	return buf, nil
+}
+
+func normalizePath(p string) string {
+	return filepath.ToSlash(p)
 }

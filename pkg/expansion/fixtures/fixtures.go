@@ -91,6 +91,7 @@ kind: Pod
 metadata:
   labels:
     app: nginx
+  name: nginx-deployment-pod
   namespace: default
 spec:
   containers:
@@ -108,6 +109,7 @@ kind: Pod
 metadata:
   labels:
     app: nginx
+  name: nginx-deployment-pod
   namespace: default
 spec:
   containers:
@@ -115,6 +117,24 @@ spec:
     - "/bin/sh"
     image: nginx:1.14.2
     imagePullPolicy: Always
+    name: nginx
+    ports:
+    - containerPort: '80'
+`
+
+	PodMutateImage = `
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: nginx
+  name: nginx-deployment-pod
+  namespace: default
+spec:
+  containers:
+  - args:
+    - "/bin/sh"
+    image: nginx:v2
     name: nginx
     ports:
     - containerPort: '80'
@@ -128,6 +148,7 @@ metadata:
     app: nginx
   annotations:
     owner: admin
+  name: nginx-deployment-pod
   namespace: default
 spec:
   containers:
@@ -203,6 +224,21 @@ spec:
     kinds:
       - apiGroups: []
         kinds: []
+`
+
+	AssignImage = `
+apiVersion: mutations.gatekeeper.sh/v1alpha1
+kind: AssignImage
+metadata:
+  name: tag-v2
+spec:
+  applyTo:
+  - groups: [""]
+    kinds: ["Pod"]
+    versions: ["v1"]
+  location: "spec.containers[name:nginx].image"
+  parameters:
+    assignTag: ":v2"
 `
 
 	AssignHostnameSourceOriginal = `
@@ -364,6 +400,7 @@ metadata:
     sound: meow
   labels:
     fluffy: extremely
+  name: big-chungus-kitten
   namespace: default
 spec:
   breed: calico
@@ -377,6 +414,7 @@ kind: Purr
 metadata:
   annotations:
     shouldPet: manytimes
+  name: big-chungus-purr
   namespace: default
 spec:
   loud: very

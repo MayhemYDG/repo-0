@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v2"
 
@@ -100,7 +101,37 @@ type ParserOptions struct {
 	AllFutureKeywords  bool
 	FutureKeywords     []string
 	SkipRules          bool
+	JSONOptions        *JSONOptions
 	unreleasedKeywords bool // TODO(sr): cleanup
+}
+
+// JSONOptions defines the options for JSON operations,
+// currently only marshaling can be configured
+type JSONOptions struct {
+	MarshalOptions JSONMarshalOptions
+}
+
+// JSONMarshalOptions defines the options for JSON marshaling,
+// currently only toggling the marshaling of location information is supported
+type JSONMarshalOptions struct {
+	IncludeLocation NodeToggle
+}
+
+// NodeToggle is a generic struct to allow the toggling of
+// settings for different ast node types
+type NodeToggle struct {
+	Term           bool
+	Package        bool
+	Comment        bool
+	Import         bool
+	Rule           bool
+	Head           bool
+	Expr           bool
+	SomeDecl       bool
+	Every          bool
+	With           bool
+	Annotations    bool
+	AnnotationsRef bool
 }
 
 // NewParser creates and initializes a Parser.
@@ -173,6 +204,13 @@ func (p *Parser) WithCapabilities(c *Capabilities) *Parser {
 // WithSkipRules instructs the parser not to attempt to parse Rule statements.
 func (p *Parser) WithSkipRules(skip bool) *Parser {
 	p.po.SkipRules = skip
+	return p
+}
+
+// WithJSONOptions sets the JSONOptions which will be set on nodes to configure
+// their JSON marshaling behavior.
+func (p *Parser) WithJSONOptions(jsonOptions *JSONOptions) *Parser {
+	p.po.JSONOptions = jsonOptions
 	return p
 }
 
@@ -354,6 +392,19 @@ func (p *Parser) Parse() ([]Statement, []*Comment, Errors) {
 
 	if p.po.ProcessAnnotation {
 		stmts = p.parseAnnotations(stmts)
+	}
+
+	if p.po.JSONOptions != nil {
+		for i := range stmts {
+			vis := NewGenericVisitor(func(x interface{}) bool {
+				if x, ok := x.(customJSON); ok {
+					x.setJSONOptions(*p.po.JSONOptions)
+				}
+				return false
+			})
+
+			vis.Walk(stmts[i])
+		}
 	}
 
 	return stmts, p.s.comments, p.s.errors
@@ -831,6 +882,10 @@ func (p *Parser) parseHead(defaultRule bool) (*Head, bool) {
 
 	switch p.s.tok {
 	case tokens.Contains: // NOTE: no Value for `contains` heads, we return here
+		// Catch error case of using 'contains' with a function definition rule head.
+		if head.Args != nil {
+			p.illegal("the contains keyword can only be used with multi-value rule definitions (e.g., %s contains <VALUE> { ... })", name)
+		}
 		p.scan()
 		head.Key = p.parseTermInfixCall()
 		if head.Key == nil {
@@ -886,7 +941,6 @@ func (p *Parser) parseQuery(requireSemi bool, end tokens.Token) Body {
 	}
 
 	for {
-
 		expr := p.parseLiteral()
 		if expr == nil {
 			return nil
@@ -2154,7 +2208,7 @@ func (b *metadataParser) Append(c *Comment) {
 	b.comments = append(b.comments, c)
 }
 
-var yamlLineErrRegex = regexp.MustCompile(`^yaml: line ([[:digit:]]+):`)
+var yamlLineErrRegex = regexp.MustCompile(`^yaml:(?: unmarshal errors:[\n\s]*)? line ([[:digit:]]+):`)
 
 func (b *metadataParser) Parse() (*Annotations, error) {
 
@@ -2165,22 +2219,25 @@ func (b *metadataParser) Parse() (*Annotations, error) {
 	}
 
 	if err := yaml.Unmarshal(b.buf.Bytes(), &raw); err != nil {
+		var comment *Comment
 		match := yamlLineErrRegex.FindStringSubmatch(err.Error())
 		if len(match) == 2 {
 			n, err2 := strconv.Atoi(match[1])
 			if err2 == nil {
 				index := n - 1 // line numbering is 1-based so subtract one from row
 				if index >= len(b.comments) {
-					b.loc = b.comments[len(b.comments)-1].Location
+					comment = b.comments[len(b.comments)-1]
 				} else {
-					b.loc = b.comments[index].Location
+					comment = b.comments[index]
 				}
+				b.loc = comment.Location
 			}
 		}
-		return nil, err
+		return nil, augmentYamlError(err, b.comments)
 	}
 
 	var result Annotations
+	result.comments = b.comments
 	result.Scope = raw.Scope
 	result.Entrypoint = raw.Entrypoint
 	result.Title = raw.Title
@@ -2244,6 +2301,40 @@ func (b *metadataParser) Parse() (*Annotations, error) {
 
 	result.Location = b.loc
 	return &result, nil
+}
+
+// augmentYamlError augments a YAML error with hints intended to help the user figure out the cause of an otherwise cryptic error.
+// These are hints, instead of proper errors, because they are educated guesses, and aren't guaranteed to be correct.
+func augmentYamlError(err error, comments []*Comment) error {
+	// Adding hints for when key/value ':' separator isn't suffixed with a legal YAML space symbol
+	for _, comment := range comments {
+		txt := string(comment.Text)
+		parts := strings.Split(txt, ":")
+		if len(parts) > 1 {
+			parts = parts[1:]
+			var invalidSpaces []string
+			for partIndex, part := range parts {
+				if len(part) == 0 && partIndex == len(parts)-1 {
+					invalidSpaces = []string{}
+					break
+				}
+
+				r, _ := utf8.DecodeRuneInString(part)
+				if r == ' ' || r == '\t' {
+					invalidSpaces = []string{}
+					break
+				}
+
+				invalidSpaces = append(invalidSpaces, fmt.Sprintf("%+q", r))
+			}
+			if len(invalidSpaces) > 0 {
+				err = fmt.Errorf(
+					"%s\n  Hint: on line %d, symbol(s) %v immediately following a key/value separator ':' is not a legal yaml space character",
+					err.Error(), comment.Location.Row, invalidSpaces)
+			}
+		}
+	}
+	return err
 }
 
 func unwrapPair(pair map[string]interface{}) (k string, v interface{}) {

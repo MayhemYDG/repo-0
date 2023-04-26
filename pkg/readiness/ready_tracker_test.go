@@ -28,10 +28,11 @@ import (
 	externaldataUnversioned "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/unversioned"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/rego"
 	frameworksexternaldata "github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	mutationtypes "github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
@@ -45,8 +46,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -59,6 +62,7 @@ func setupManager(t *testing.T) (manager.Manager, *watch.Manager) {
 	t.Helper()
 
 	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(testutils.NewTestWriter(t)))
+	ctrl.SetLogger(logger)
 	metrics.Registry = prometheus.NewRegistry()
 	mgr, err := manager.New(cfg, manager.Options{
 		HealthProbeBindAddress: "127.0.0.1:29090",
@@ -89,7 +93,7 @@ func setupManager(t *testing.T) (manager.Manager, *watch.Manager) {
 
 func setupOpa(t *testing.T) *constraintclient.Client {
 	// initialize OPA
-	driver, err := local.New(local.Tracing(false))
+	driver, err := rego.New(rego.Tracing(false))
 	if err != nil {
 		t.Fatalf("setting up Driver: %v", err)
 	}
@@ -106,9 +110,12 @@ func setupController(
 	wm *watch.Manager,
 	opa *constraintclient.Client,
 	mutationSystem *mutation.System,
+	expansionSystem *expansion.System,
 	providerCache *frameworksexternaldata.ProviderCache,
 ) error {
-	tracker, err := readiness.SetupTracker(mgr, mutationSystem != nil, providerCache != nil)
+	*expansion.ExpansionEnabled = expansionSystem != nil
+
+	tracker, err := readiness.SetupTracker(mgr, mutationSystem != nil, providerCache != nil, expansionSystem != nil)
 	if err != nil {
 		return fmt.Errorf("setting up tracker: %w", err)
 	}
@@ -133,6 +140,7 @@ func setupController(
 		GetPod:           func(ctx context.Context) (*corev1.Pod, error) { return pod, nil },
 		ProcessExcluder:  processExcluder,
 		MutationSystem:   mutationSystem,
+		ExpansionSystem:  expansionSystem,
 		ProviderCache:    providerCache,
 		WatchSet:         watch.NewSet(),
 	}
@@ -156,9 +164,10 @@ func Test_AssignMetadata(t *testing.T) {
 	opaClient := setupOpa(t)
 
 	mutationSystem := mutation.NewSystem(mutation.SystemOpts{})
+	expansionSystem := expansion.NewSystem(mutationSystem)
 	providerCache := frameworksexternaldata.NewCache()
 
-	if err := setupController(mgr, wm, opaClient, mutationSystem, providerCache); err != nil {
+	if err := setupController(mgr, wm, opaClient, mutationSystem, expansionSystem, providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
 
@@ -199,9 +208,10 @@ func Test_ModifySet(t *testing.T) {
 	opaClient := setupOpa(t)
 
 	mutationSystem := mutation.NewSystem(mutation.SystemOpts{})
+	expansionSystem := expansion.NewSystem(mutationSystem)
 	providerCache := frameworksexternaldata.NewCache()
 
-	if err := setupController(mgr, wm, opaClient, mutationSystem, providerCache); err != nil {
+	if err := setupController(mgr, wm, opaClient, mutationSystem, expansionSystem, providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
 
@@ -216,6 +226,48 @@ func Test_ModifySet(t *testing.T) {
 
 	// Verify that the ModifySet is present in the cache
 	for _, am := range testModifySet {
+		id := mutationtypes.MakeID(am)
+		expectedMutator := mutationSystem.Get(id)
+		if expectedMutator == nil {
+			t.Fatal("want expectedMutator != nil but got nil")
+		}
+	}
+}
+
+func Test_AssignImage(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	testutils.Setenv(t, "POD_NAME", "no-pod")
+
+	// Apply fixtures *before* the controllers are set up.
+	err := applyFixtures("testdata")
+	if err != nil {
+		t.Fatalf("applying fixtures: %v", err)
+	}
+
+	// Wire up the rest.
+	mgr, wm := setupManager(t)
+	opaClient := setupOpa(t)
+
+	mutationSystem := mutation.NewSystem(mutation.SystemOpts{})
+	expansionSystem := expansion.NewSystem(mutationSystem)
+	providerCache := frameworksexternaldata.NewCache()
+
+	if err := setupController(mgr, wm, opaClient, mutationSystem, expansionSystem, providerCache); err != nil {
+		t.Fatalf("setupControllers: %v", err)
+	}
+
+	ctx := context.Background()
+	testutils.StartManager(ctx, t, mgr)
+
+	g.Eventually(func() (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		return probeIsReady(ctx)
+	}, 20*time.Second, 1*time.Second).Should(gomega.BeTrue())
+
+	// Verify that the AssignImage is present in the cache
+	for _, am := range testAssignImage {
 		id := mutationtypes.MakeID(am)
 		expectedMutator := mutationSystem.Get(id)
 		if expectedMutator == nil {
@@ -240,9 +292,10 @@ func Test_Assign(t *testing.T) {
 	opaClient := setupOpa(t)
 
 	mutationSystem := mutation.NewSystem(mutation.SystemOpts{})
+	expansionSystem := expansion.NewSystem(mutationSystem)
 	providerCache := frameworksexternaldata.NewCache()
 
-	if err := setupController(mgr, wm, opaClient, mutationSystem, providerCache); err != nil {
+	if err := setupController(mgr, wm, opaClient, mutationSystem, expansionSystem, providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
 
@@ -262,6 +315,61 @@ func Test_Assign(t *testing.T) {
 		if expectedMutator == nil {
 			t.Fatal("want expectedMutator != nil but got nil")
 		}
+	}
+}
+
+func Test_ExpansionTemplate(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	testutils.Setenv(t, "POD_NAME", "no-pod")
+
+	// Apply fixtures *before* the controllers are setup.
+	err := applyFixtures("testdata")
+	if err != nil {
+		t.Fatalf("applying fixtures: %v", err)
+	}
+
+	// Wire up the rest.
+	mgr, wm := setupManager(t)
+	opaClient := setupOpa(t)
+
+	mutationSystem := mutation.NewSystem(mutation.SystemOpts{})
+	expansionSystem := expansion.NewSystem(mutationSystem)
+	providerCache := frameworksexternaldata.NewCache()
+
+	if err := setupController(mgr, wm, opaClient, mutationSystem, expansionSystem, providerCache); err != nil {
+		t.Fatalf("setupControllers: %v", err)
+	}
+
+	ctx := context.Background()
+	testutils.StartManager(ctx, t, mgr)
+
+	g.Eventually(func() (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		return probeIsReady(ctx)
+	}, 20*time.Second, 1*time.Second).Should(gomega.BeTrue())
+
+	// Verify that the ExpansionTemplate is registered by expanding a demo deployment
+	// and checking that the resulting Pod is non-nil
+	deployment := makeDeployment("demo-deployment")
+	o, err := runtime.DefaultUnstructuredConverter.ToUnstructured(deployment)
+	if err != nil {
+		panic(fmt.Errorf("error converting deployment to unstructured: %w", err))
+	}
+	u := unstructured.Unstructured{Object: o}
+	m := mutationtypes.Mutable{
+		Object:    &u,
+		Namespace: testNS,
+		Username:  "",
+		Source:    "All",
+	}
+	res, err := expansionSystem.Expand(&m)
+	if err != nil {
+		panic(fmt.Errorf("error expanding: %w", err))
+	}
+	if len(res) != 1 {
+		t.Fatal("expected generator to expand into 1 pod, but got 0 resultants")
 	}
 }
 
@@ -288,6 +396,7 @@ func Test_Provider(t *testing.T) {
 		wm,
 		opaClient,
 		mutation.NewSystem(mutation.SystemOpts{}),
+		nil,
 		providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
@@ -342,7 +451,7 @@ func Test_Tracker(t *testing.T) {
 	opaClient := setupOpa(t)
 	providerCache := frameworksexternaldata.NewCache()
 
-	if err := setupController(mgr, wm, opaClient, mutation.NewSystem(mutation.SystemOpts{}), providerCache); err != nil {
+	if err := setupController(mgr, wm, opaClient, mutation.NewSystem(mutation.SystemOpts{}), nil, providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
 
@@ -440,7 +549,7 @@ func Test_Tracker_UnregisteredCachedData(t *testing.T) {
 	opaClient := setupOpa(t)
 	providerCache := frameworksexternaldata.NewCache()
 
-	if err := setupController(mgr, wm, opaClient, mutation.NewSystem(mutation.SystemOpts{}), providerCache); err != nil {
+	if err := setupController(mgr, wm, opaClient, mutation.NewSystem(mutation.SystemOpts{}), nil, providerCache); err != nil {
 		t.Fatalf("setupControllers: %v", err)
 	}
 
@@ -463,7 +572,7 @@ func Test_CollectDeleted(t *testing.T) {
 	type test struct {
 		description string
 		gvk         schema.GroupVersionKind
-		tracker     readiness.Expectations
+		tracker     *readiness.Expectations
 	}
 
 	g := gomega.NewWithT(t)
@@ -480,7 +589,7 @@ func Test_CollectDeleted(t *testing.T) {
 		lister:    mgr.GetAPIReader(),
 		namespace: "gatekeeper-system",
 	}
-	tracker := readiness.NewTracker(lister, false, false)
+	tracker := readiness.NewTracker(lister, false, false, false)
 	err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		return tracker.Run(ctx)
 	}))
@@ -521,7 +630,7 @@ func Test_CollectDeleted(t *testing.T) {
 	// between them to keep the test short. Trackers are mostly independent per GVK.
 	tests := []test{
 		{description: "constraints", gvk: cgvk},
-		{description: "data (configmaps)", gvk: cmgvk, tracker: cmtracker},
+		{description: "data (configmaps)", gvk: cmgvk, tracker: &cmtracker},
 		{description: "templates", gvk: ctgvk},
 		// no need to check Config here since it is not actually Expected for readiness
 		// (the objects identified in a Config's syncOnly are Expected, tested in data case above)
@@ -531,7 +640,7 @@ func Test_CollectDeleted(t *testing.T) {
 		t.Run(tc.description, func(t *testing.T) {
 			var tt readiness.Expectations
 			if tc.tracker != nil {
-				tt = tc.tracker
+				tt = *tc.tracker
 			} else {
 				tt = tracker.For(tc.gvk)
 			}

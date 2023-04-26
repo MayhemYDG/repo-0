@@ -27,23 +27,21 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
-	// set GOMAXPROCS to the number of container cores, if known.
-	_ "go.uber.org/automaxprocs"
-
 	"github.com/go-logr/zapr"
 	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/rego"
 	frameworksexternaldata "github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	api "github.com/open-policy-agent/gatekeeper/apis"
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
+	expansionv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/expansion/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	mutationsv1beta1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1beta1"
 	statusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/audit"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
+	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
 	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
@@ -56,6 +54,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/watch"
 	"github.com/open-policy-agent/gatekeeper/pkg/webhook"
 	"github.com/open-policy-agent/gatekeeper/third_party/sigs.k8s.io/controller-runtime/pkg/dynamiccache"
+	_ "go.uber.org/automaxprocs" // set GOMAXPROCS to the number of container cores, if known.
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -70,7 +69,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
-	// +kubebuilder:scaffold:imports
 )
 
 const (
@@ -119,6 +117,7 @@ func init() {
 	_ = statusv1beta1.AddToScheme(scheme)
 	_ = mutationsv1alpha1.AddToScheme(scheme)
 	_ = mutationsv1beta1.AddToScheme(scheme)
+	_ = expansionv1alpha1.AddToScheme(scheme)
 
 	// +kubebuilder:scaffold:scheme
 	flag.Var(disabledBuiltins, "disable-opa-builtin", "disable opa built-in function, this flag can be declared more than once.")
@@ -140,7 +139,11 @@ func innerMain() int {
 		setupLog.Info(fmt.Sprintf("Starting profiling on port %d", *profilePort))
 		go func() {
 			addr := fmt.Sprintf("%s:%d", "localhost", *profilePort)
-			setupLog.Error(http.ListenAndServe(addr, nil), "unable to start profiling server")
+			server := http.Server{
+				Addr:        addr,
+				ReadTimeout: 5 * time.Second,
+			}
+			setupLog.Error(server.ListenAndServe(), "unable to start profiling server")
 		}()
 	}
 
@@ -258,7 +261,7 @@ func innerMain() int {
 	sw := watch.NewSwitch()
 
 	// Setup tracker and register readiness probe.
-	tracker, err := readiness.SetupTracker(mgr, mutation.Enabled(), *externaldata.ExternalDataEnabled)
+	tracker, err := readiness.SetupTracker(mgr, mutation.Enabled(), *externaldata.ExternalDataEnabled, *expansion.ExpansionEnabled)
 	if err != nil {
 		setupLog.Error(err, "unable to register readiness tracker")
 		return 1
@@ -294,6 +297,7 @@ func innerMain() int {
 			setupLog.Error(err, "problem running manager")
 			mgrErr <- err
 		}
+		close(mgrErr)
 	}()
 
 	// block until either setupControllers or mgr has an error, or mgr exits.
@@ -333,11 +337,11 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	<-setupFinished
 
 	var providerCache *frameworksexternaldata.ProviderCache
-	args := []local.Arg{local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...)}
+	args := []rego.Arg{rego.Tracing(false), rego.DisableBuiltins(disabledBuiltins.ToSlice()...)}
 	mutationOpts := mutation.SystemOpts{Reporter: mutation.NewStatsReporter()}
 	if *externaldata.ExternalDataEnabled {
 		providerCache = frameworksexternaldata.NewCache()
-		args = append(args, local.AddExternalDataProviderCache(providerCache))
+		args = append(args, rego.AddExternalDataProviderCache(providerCache))
 		mutationOpts.ProviderCache = providerCache
 
 		certFile := filepath.Join(*certDir, certName)
@@ -357,13 +361,13 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 		}
 
 		// register the client cert watcher to the driver
-		args = append(args, local.EnableExternalDataClientAuth(), local.AddExternalDataClientCertWatcher(certWatcher))
+		args = append(args, rego.EnableExternalDataClientAuth(), rego.AddExternalDataClientCertWatcher(certWatcher))
 
 		// register the client cert watcher to the mutation system
 		mutationOpts.ClientCertWatcher = certWatcher
 	}
 	// initialize OPA
-	driver, err := local.New(args...)
+	driver, err := rego.New(args...)
 	if err != nil {
 		setupLog.Error(err, "unable to set up Driver")
 		return err

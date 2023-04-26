@@ -18,6 +18,7 @@ Generally, design docs are on Google docs:
    * [Mutation Initial Design Doc (April 2019)](https://docs.google.com/document/d/1qTHwqoUX8AL2jodyWKB_2szrGDwhi14Ra_LlQ-ogtck/edit#heading=h.iu1ppjy7g7j)
 * [External Data](https://docs.google.com/document/d/1hPi86jdsCKg8puYT5_s_73mPGExUJeZfyKmvG-XWtPc/edit#)
 * [gator validate](https://docs.google.com/document/d/1B0hXDia8SExOkCVAEbPVHFJmnWeJgHziGvMxnzrENa0/edit)
+* [Sync Resource](https://docs.google.com/document/d/1ZbXaEh7v_HcgrRu7N-kEucU2pXyq1Rt7cSmmFOBN2q8/edit)
 
 ## Implemented
 * [V3 Accepted Design](https://docs.google.com/document/d/1yC4wgpVoJj6ngYnSTtO-HeaIBl05gla562sD7qKPy3M/edit#heading=h.z0bjqzl81dpe)
@@ -48,6 +49,9 @@ Generally, design docs are on Google docs:
 These docs may not be design docs in themselves, but seek to influence design
 decisions
 
+* [Mutation Convergence Proof](https://docs.google.com/document/d/1mCHHhBABzUwP8FtUuEf_B-FX-HHgh_k4bwZcGUYm7Sw/edit#heading=h.j5thjfnqybpn)
+   * This looks at the elements of mutation that allow us to assert that any combination of mutators should converge
+     and should serve as a guide when considering changes in behavior to mutation.
 * [Mutation Dynamics](https://docs.google.com/document/d/1WKj-9xYYVO9IckQVZHYVFCziRVS6zxCfvJxWbkbLcOM/view#)
    * A dissection of the mutation problem space, attempting to break down the
      salient behavioral elements and figure out what's needed for a

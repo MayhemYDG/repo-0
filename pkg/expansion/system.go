@@ -2,6 +2,7 @@ package expansion
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"strings"
 	"sync"
@@ -13,6 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
+
+var ExpansionEnabled *bool
+
+func init() {
+	ExpansionEnabled = flag.Bool("enable-generator-resource-expansion", false, "(alpha) Enable the expansion of generator resources")
+}
 
 type System struct {
 	lock           sync.RWMutex
@@ -34,7 +41,7 @@ func (s *System) UpsertTemplate(template *expansionunversioned.ExpansionTemplate
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if err := validateTemplate(template); err != nil {
+	if err := ValidateTemplate(template); err != nil {
 		return err
 	}
 
@@ -55,7 +62,7 @@ func (s *System) RemoveTemplate(template *expansionunversioned.ExpansionTemplate
 	return nil
 }
 
-func validateTemplate(template *expansionunversioned.ExpansionTemplate) error {
+func ValidateTemplate(template *expansionunversioned.ExpansionTemplate) error {
 	k := keyForTemplate(template)
 	if k == "" {
 		return fmt.Errorf("ExpansionTemplate has empty name field")
@@ -143,7 +150,7 @@ func (s *System) Expand(base *mutationtypes.Mutable) ([]*Resultant, error) {
 		}
 		_, err := s.mutationSystem.Mutate(mutable)
 		if err != nil {
-			return nil, fmt.Errorf("failed to mutate resultant resource %s: %s", res.Obj.GetName(), err)
+			return nil, fmt.Errorf("failed to mutate resultant resource %s: %w", res.Obj.GetName(), err)
 		}
 	}
 
@@ -166,7 +173,7 @@ func expandResource(obj *unstructured.Unstructured, ns *corev1.Namespace, templa
 
 	src, ok, err := unstructured.NestedMap(obj.Object, sourcePath(srcPath)...)
 	if err != nil {
-		return nil, fmt.Errorf("could not extract source field from unstructured: %s", err)
+		return nil, fmt.Errorf("could not extract source field from unstructured: %w", err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("could not find source field %q in Obj", srcPath)
@@ -176,8 +183,23 @@ func expandResource(obj *unstructured.Unstructured, ns *corev1.Namespace, templa
 	resource.SetUnstructuredContent(src)
 	resource.SetGroupVersionKind(resultantGVK)
 	resource.SetNamespace(ns.Name)
+	resource.SetName(mockNameForResource(obj, resultantGVK))
 
 	return resource, nil
+}
+
+// mockNameForResource returns a mock name for a resultant resource created
+// from expanding `gen`. The name will be of the form:
+// "<generator name>-<resultant kind>". For example, a deployment named
+// `nginx-deployment` will produce a resultant named `nginx-deployment-pod`.
+func mockNameForResource(gen *unstructured.Unstructured, gvk schema.GroupVersionKind) string {
+	name := gen.GetName()
+	if gvk.Kind != "" {
+		name += "-"
+	}
+	name += gvk.Kind
+
+	return strings.ToLower(name)
 }
 
 func NewSystem(mutationSystem *mutation.System) *System {

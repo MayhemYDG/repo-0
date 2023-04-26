@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
 	templv1beta1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
@@ -77,7 +76,11 @@ func getFiles(dir string) ([]string, error) {
 	return filePaths, nil
 }
 
-func (f *fakeNsGetter) Get(_ context.Context, key client.ObjectKey, obj client.Object) error {
+func (f *fakeNsGetter) SubResource(_ string) client.SubResourceClient {
+	return nil
+}
+
+func (f *fakeNsGetter) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
 	if ns, ok := obj.(*corev1.Namespace); ok {
 		ns.ObjectMeta = metav1.ObjectMeta{
 			Name: key.Name,
@@ -306,9 +309,6 @@ func BenchmarkValidationHandler(b *testing.B) {
 					injectedConfig:  cfg,
 				},
 			}
-
-			// seed random generator
-			rand.Seed(time.Now().UnixNano())
 
 			// create T templates
 			err = addTemplates(ctx, opaClient, ctList)

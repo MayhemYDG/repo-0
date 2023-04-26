@@ -9,7 +9,7 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/rego"
 	podstatus "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/constrainttemplate"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
@@ -108,12 +108,12 @@ violation[{"msg": "denied!"}] {
 
 	// creating the gatekeeper-system namespace is necessary because that's where
 	// status resources live by default
-	if err := createGatekeeperNamespace(mgr.GetConfig()); err != nil {
+	if err := testutils.CreateGatekeeperNamespace(mgr.GetConfig()); err != nil {
 		t.Fatalf("want createGatekeeperNamespace(mgr.GetConfig()) error = nil, got %v", err)
 	}
 
 	// initialize OPA
-	driver, err := local.New(local.Tracing(true))
+	driver, err := rego.New(rego.Tracing(true))
 	if err != nil {
 		t.Fatalf("unable to set up Driver: %v", err)
 	}
@@ -126,7 +126,7 @@ violation[{"msg": "denied!"}] {
 	testutils.Setenv(t, "POD_NAME", "no-pod")
 
 	cs := watch.NewSwitch()
-	tracker, err := readiness.SetupTracker(mgr, false, false)
+	tracker, err := readiness.SetupTracker(mgr, false, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

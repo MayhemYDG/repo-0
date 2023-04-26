@@ -9,7 +9,7 @@ import (
 	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/constraints"
 	templatesv1beta1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/rego"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
 	rtypes "github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
@@ -29,7 +29,6 @@ import (
 	k8schema "k8s.io/apimachinery/pkg/runtime/schema"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	atypes "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 const (
@@ -166,12 +165,17 @@ func validRegoTemplate() *templates.ConstraintTemplate {
 			},
 			Targets: []templates.Target{{
 				Target: target.Name,
-				Rego: `
+				Code: []templates.Code{{
+					Engine: "Rego",
+					Source: &templates.Anything{
+						Value: map[string]interface{}{"rego": `
 package goodrego
 
-        violation[{"msg": msg}] {
-          msg := "Maybe this will work?"
-        }`,
+violation[{"msg": msg}] {
+   msg := "Maybe this will work?"
+}`},
+					},
+				}},
 			}},
 		},
 	}
@@ -203,7 +207,7 @@ func invalidRegoTemplate() *templates.ConstraintTemplate {
 
 func makeOpaClient() (*constraintclient.Client, error) {
 	t := &target.K8sValidationTarget{}
-	driver, err := local.New(local.Tracing(false))
+	driver, err := rego.New(rego.Tracing(false))
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +249,7 @@ func TestTemplateValidation(t *testing.T) {
 				t.Fatalf("Error parsing yaml: %s", err)
 			}
 
-			review := &atypes.Request{
+			review := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "templates.gatekeeper.sh",
@@ -275,7 +279,11 @@ type nsGetter struct {
 	testclients.NoopClient
 }
 
-func (f *nsGetter) Get(_ context.Context, key ctrlclient.ObjectKey, obj ctrlclient.Object) error {
+func (f *nsGetter) SubResource(_ string) ctrlclient.SubResourceClient {
+	return nil
+}
+
+func (f *nsGetter) Get(_ context.Context, key ctrlclient.ObjectKey, obj ctrlclient.Object, _ ...ctrlclient.GetOption) error {
 	if ns, ok := obj.(*corev1.Namespace); ok {
 		ns.ObjectMeta = metav1.ObjectMeta{
 			Name: key.Name,
@@ -290,7 +298,11 @@ type errorNSGetter struct {
 	testclients.NoopClient
 }
 
-func (f *errorNSGetter) Get(_ context.Context, key ctrlclient.ObjectKey, _ ctrlclient.Object) error {
+func (f *errorNSGetter) SubResource(_ string) ctrlclient.SubResourceClient {
+	return nil
+}
+
+func (f *errorNSGetter) Get(_ context.Context, key ctrlclient.ObjectKey, _ ctrlclient.Object, _ ...ctrlclient.GetOption) error {
 	return k8serrors.NewNotFound(k8schema.GroupResource{Resource: "namespaces"}, key.Name)
 }
 
@@ -351,7 +363,7 @@ func TestReviewRequest(t *testing.T) {
 			if maxThreads > 0 {
 				handler.semaphore = make(chan struct{}, maxThreads)
 			}
-			review := &atypes.Request{
+			review := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
@@ -515,7 +527,7 @@ func TestConstraintValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error parsing yaml: %s", err)
 			}
-			review := &atypes.Request{
+			review := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "constraints.gatekeeper.sh",
@@ -642,7 +654,7 @@ func TestTracing(t *testing.T) {
 				handler.semaphore = make(chan struct{}, maxThreads)
 			}
 
-			review := &atypes.Request{
+			review := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
@@ -817,7 +829,7 @@ func TestGetValidationMessages(t *testing.T) {
 			if maxThreads > 0 {
 				handler.semaphore = make(chan struct{}, maxThreads)
 			}
-			review := &atypes.Request{
+			review := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
@@ -864,7 +876,7 @@ func TestValidateConfigResource(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.TestName, func(t *testing.T) {
 			handler := validationHandler{}
-			req := &atypes.Request{
+			req := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Name: tt.Name,
 				},
@@ -916,7 +928,7 @@ func TestValidateProvider(t *testing.T) {
 				t.Fatalf("Error parsing yaml: %s", err)
 			}
 
-			req := &atypes.Request{
+			req := &admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Object: runtime.RawExtension{
 						Raw: b,

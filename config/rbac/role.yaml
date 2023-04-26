@@ -6,6 +6,13 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - '*'
   resources:
   - '*'
@@ -59,6 +66,18 @@ rules:
   - update
 - apiGroups:
   - constraints.gatekeeper.sh
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - expansion.gatekeeper.sh
   resources:
   - '*'
   verbs:

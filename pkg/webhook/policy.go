@@ -29,11 +29,12 @@ import (
 	externaldataUnversioned "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/unversioned"
 	constraintclient "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/rego"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	rtypes "github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/gatekeeper/apis"
+	expansionunversioned "github.com/open-policy-agent/gatekeeper/apis/expansion/unversioned"
 	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/expansion"
@@ -41,6 +42,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assign"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assignimage"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assignmeta"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/modifyset"
 	mutationtypes "github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
@@ -229,14 +231,17 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 func (h *validationHandler) getValidationMessages(res []*rtypes.Result, req *admission.Request) ([]string, []string) {
 	var denyMsgs, warnMsgs []string
 	var resourceName string
+	obj := &unstructured.Unstructured{}
+
 	if len(res) > 0 && (*logDenies || *emitAdmissionEvents) {
 		resourceName = req.AdmissionRequest.Name
-		if len(resourceName) == 0 && req.AdmissionRequest.Object.Raw != nil {
-			// On a CREATE operation, the client may omit name and
-			// rely on the server to generate the name.
-			obj := &unstructured.Unstructured{}
+		if req.AdmissionRequest.Object.Raw != nil {
 			if _, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, obj); err == nil {
-				resourceName = obj.GetName()
+				// On a CREATE operation, the client may omit name and
+				// rely on the server to generate the name.
+				if len(resourceName) == 0 {
+					resourceName = obj.GetName()
+				}
 			}
 		}
 	}
@@ -289,24 +294,14 @@ func (h *validationHandler) getValidationMessages(res []*rtypes.Result, req *adm
 				eventMsg = "Admission webhook \"validation.gatekeeper.sh\" denied request"
 				reason = "FailedAdmission"
 			}
-			ref := getViolationRef(
-				h.gkNamespace,
-				req.AdmissionRequest.Kind.Kind,
-				resourceName,
-				req.AdmissionRequest.Namespace,
-				r.Constraint.GetKind(),
-				r.Constraint.GetName(),
-				r.Constraint.GetNamespace())
-			h.eventRecorder.AnnotatedEventf(
-				ref,
-				annotations,
-				corev1.EventTypeWarning,
-				reason,
-				"%s, Resource Namespace: %s, Constraint: %s, Message: %s",
-				eventMsg,
-				req.AdmissionRequest.Namespace,
-				r.Constraint.GetName(),
-				r.Msg)
+
+			ref := getViolationRef(h.gkNamespace, req.AdmissionRequest.Kind.Kind, resourceName, obj.GetNamespace(), obj.GetResourceVersion(), obj.GetUID(), r.Constraint.GetKind(), r.Constraint.GetName(), r.Constraint.GetNamespace(), *admissionEventsInvolvedNamespace)
+
+			if *admissionEventsInvolvedNamespace {
+				h.eventRecorder.AnnotatedEventf(ref, annotations, corev1.EventTypeWarning, reason, "%s, Constraint: %s, Message: %s", eventMsg, r.Constraint.GetName(), r.Msg)
+			} else {
+				h.eventRecorder.AnnotatedEventf(ref, annotations, corev1.EventTypeWarning, reason, "%s, Resource Namespace: %s, Constraint: %s, Message: %s", eventMsg, req.AdmissionRequest.Namespace, r.Constraint.GetName(), r.Msg)
+			}
 		}
 
 		if r.EnforcementAction == string(util.Deny) {
@@ -328,6 +323,8 @@ func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req
 	switch {
 	case gvk.Group == "templates.gatekeeper.sh" && gvk.Kind == "ConstraintTemplate":
 		return h.validateTemplate(ctx, req)
+	case gvk.Group == "expansion.gatekeeper.sh" && gvk.Kind == "ExpansionTemplate":
+		return h.validateExpansionTemplate(req)
 	case gvk.Group == "constraints.gatekeeper.sh":
 		return h.validateConstraint(req)
 	case gvk.Group == "config.gatekeeper.sh" && gvk.Kind == "Config":
@@ -340,6 +337,8 @@ func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req
 		return h.validateAssign(req)
 	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "ModifySet":
 		return h.validateModifySet(req)
+	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "AssignImage":
+		return h.validateAssignImage(req)
 	case req.AdmissionRequest.Kind.Group == externalDataGroup && req.AdmissionRequest.Kind.Kind == "Provider":
 		return h.validateProvider(req)
 	}
@@ -371,9 +370,9 @@ func (h *validationHandler) validateTemplate(ctx context.Context, req *admission
 
 	// Create a temporary Driver and attempt to add the Template to it. This
 	// ensures the Rego code both parses and compiles.
-	d, err := local.New()
+	d, err := rego.New()
 	if err != nil {
-		return false, fmt.Errorf("unable to create Driver: %v", err)
+		return false, fmt.Errorf("unable to create Driver: %w", err)
 	}
 
 	err = d.AddTemplate(ctx, unversioned)
@@ -411,6 +410,23 @@ func (h *validationHandler) validateConstraint(req *admission.Request) (bool, er
 	return false, nil
 }
 
+func (h *validationHandler) validateExpansionTemplate(req *admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, nil)
+	if err != nil {
+		return false, err
+	}
+	unversioned := &expansionunversioned.ExpansionTemplate{}
+	if err := runtimeScheme.Convert(obj, unversioned, nil); err != nil {
+		return false, err
+	}
+	err = expansion.ValidateTemplate(unversioned)
+	if err != nil {
+		return true, err
+	}
+
+	return false, nil
+}
+
 func (h *validationHandler) validateConfigResource(req *admission.Request) error {
 	if req.Name != keys.Config.Name {
 		return fmt.Errorf("config resource must have name 'config'")
@@ -445,6 +461,23 @@ func (h *validationHandler) validateAssign(req *admission.Request) (bool, error)
 		return false, err
 	}
 	err = assign.IsValidAssign(unversioned)
+	if err != nil {
+		return true, err
+	}
+
+	return false, nil
+}
+
+func (h *validationHandler) validateAssignImage(req *admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, nil)
+	if err != nil {
+		return false, err
+	}
+	unversioned := &mutationsunversioned.AssignImage{}
+	if err := runtimeScheme.Convert(obj, unversioned, nil); err != nil {
+		return false, err
+	}
+	err = assignimage.IsValidAssignImage(unversioned)
 	if err != nil {
 		return true, err
 	}
@@ -504,13 +537,13 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Re
 
 	review, err := h.createReviewForRequest(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create augmentedReview: %s", err)
+		return nil, fmt.Errorf("failed to create augmentedReview: %w", err)
 	}
 
 	// Convert the request's generator resource to unstructured for expansion
 	obj := &unstructured.Unstructured{}
 	if _, _, err := deserializer.Decode(req.Object.Raw, nil, obj); err != nil {
-		return nil, fmt.Errorf("error decoding generator resource %s: %v", req.Name, err)
+		return nil, fmt.Errorf("error decoding generator resource %s: %w", req.Name, err)
 	}
 	obj.SetNamespace(req.Namespace)
 	obj.SetGroupVersionKind(
@@ -529,19 +562,19 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Re
 	}
 	resultants, err := h.expansionSystem.Expand(base)
 	if err != nil {
-		return nil, fmt.Errorf("unable to expand object: %s", err)
+		return nil, fmt.Errorf("unable to expand object: %w", err)
 	}
 
 	trace, dump := h.tracingLevel(ctx, req)
 	resp, err := h.review(ctx, review, trace, dump)
 	if err != nil {
-		return nil, fmt.Errorf("error reviewing resource %s: %s", req.Name, err)
+		return nil, fmt.Errorf("error reviewing resource %s: %w", req.Name, err)
 	}
 
 	for _, res := range resultants {
 		resultantResp, err := h.review(ctx, createReviewForResultant(res.Obj, review.Namespace), trace, dump)
 		if err != nil {
-			return nil, fmt.Errorf("error reviewing resultant resource: %s", err)
+			return nil, fmt.Errorf("error reviewing resultant resource: %w", err)
 		}
 		expansion.OverrideEnforcementAction(res.EnforcementAction, resultantResp)
 		expansion.AggregateResponses(res.TemplateName, resp, resultantResp)
@@ -604,19 +637,29 @@ func createReviewForResultant(obj *unstructured.Unstructured, ns *corev1.Namespa
 	}
 }
 
-func getViolationRef(gkNamespace, rkind, rname, rnamespace, ckind, cname, cnamespace string) *corev1.ObjectReference {
-	return &corev1.ObjectReference{
+func getViolationRef(gkNamespace, rkind, rname, rnamespace, rrv string, ruid types.UID, ckind, cname, cnamespace string, emitInvolvedNamespace bool) *corev1.ObjectReference {
+	enamespace := gkNamespace
+	if emitInvolvedNamespace && len(rnamespace) > 0 {
+		enamespace = rnamespace
+	}
+	ref := &corev1.ObjectReference{
 		Kind:      rkind,
 		Name:      rname,
-		UID:       types.UID(rkind + "/" + rnamespace + "/" + rname + "/" + ckind + "/" + cnamespace + "/" + cname),
-		Namespace: gkNamespace,
+		Namespace: enamespace,
 	}
+	if emitInvolvedNamespace && len(ruid) > 0 && len(rrv) > 0 {
+		ref.UID = ruid
+		ref.ResourceVersion = rrv
+	} else if !emitInvolvedNamespace {
+		ref.UID = types.UID(rkind + "/" + rnamespace + "/" + rname + "/" + ckind + "/" + cnamespace + "/" + cname)
+	}
+	return ref
 }
 
 func AppendValidationWebhookIfEnabled(webhooks []rotator.WebhookInfo) []rotator.WebhookInfo {
 	if operations.IsAssigned(operations.Webhook) {
 		return append(webhooks, rotator.WebhookInfo{
-			Name: VwhName,
+			Name: *VwhName,
 			Type: rotator.Validating,
 		})
 	}

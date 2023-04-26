@@ -5,11 +5,12 @@ metadata:
     owner: admin
   labels:
     app: nginx
+  name: nginx-deployment-pod
 spec:
   containers:
   - args:
     - /bin/sh
-    image: nginx:1.14.2
+    image: nginx:latest
     imagePullPolicy: Always
     name: nginx
     ports:
