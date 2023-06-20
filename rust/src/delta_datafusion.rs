@@ -57,13 +57,12 @@ use datafusion_proto::physical_plan::PhysicalExtensionCodec;
 use object_store::ObjectMeta;
 use url::Url;
 
-use crate::action::Add;
+use crate::action::{self, Add};
 use crate::builder::ensure_table_uri;
+use crate::errors::{DeltaResult, DeltaTableError};
 use crate::storage::ObjectStoreRef;
 use crate::table_state::DeltaTableState;
-use crate::{action, open_table, open_table_with_storage_options, SchemaDataType};
-use crate::{DeltaResult, Invariant};
-use crate::{DeltaTable, DeltaTableError};
+use crate::{open_table, open_table_with_storage_options, DeltaTable, Invariant, SchemaDataType};
 
 impl From<DeltaTableError> for DataFusionError {
     fn from(err: DeltaTableError) -> Self {
@@ -239,6 +238,7 @@ impl DeltaTableState {
     }
 }
 
+// TODO: Collapse with operations/transaction/state.rs method of same name
 fn get_prune_stats(table: &DeltaTable, column: &Column, get_max: bool) -> Option<ArrayRef> {
     let field = table
         .get_schema()
@@ -262,7 +262,9 @@ fn get_prune_stats(table: &DeltaTable, column: &Column, get_max: bool) -> Option
                 Some(v) => serde_json::Value::String(v.to_string()),
                 None => serde_json::Value::Null,
             };
-            to_correct_scalar_value(&value, &data_type).unwrap_or(ScalarValue::Null)
+            to_correct_scalar_value(&value, &data_type).unwrap_or(
+                get_null_of_arrow_type(&data_type).expect("Could not determine null type"),
+            )
         } else if let Ok(Some(statistics)) = add.get_stats() {
             let values = if get_max {
                 statistics.max_values
@@ -273,9 +275,12 @@ fn get_prune_stats(table: &DeltaTable, column: &Column, get_max: bool) -> Option
             values
                 .get(&column.name)
                 .and_then(|f| to_correct_scalar_value(f.as_value()?, &data_type))
-                .unwrap_or(ScalarValue::Null)
+                .unwrap_or(
+                    get_null_of_arrow_type(&data_type).expect("Could not determine null type"),
+                )
         } else {
-            ScalarValue::Null
+            // No statistics available
+            get_null_of_arrow_type(&data_type).expect("Could not determine null type")
         }
     });
     ScalarValue::iter_to_array(values).ok()
@@ -547,7 +552,7 @@ impl ExecutionPlan for DeltaScan {
     }
 }
 
-fn get_null_of_arrow_type(t: &ArrowDataType) -> DeltaResult<ScalarValue> {
+pub(crate) fn get_null_of_arrow_type(t: &ArrowDataType) -> DeltaResult<ScalarValue> {
     match t {
         ArrowDataType::Null => Ok(ScalarValue::Null),
         ArrowDataType::Boolean => Ok(ScalarValue::Boolean(None)),
@@ -584,11 +589,14 @@ fn get_null_of_arrow_type(t: &ArrowDataType) -> DeltaResult<ScalarValue> {
                 TimeUnit::Nanosecond => ScalarValue::TimestampNanosecond(None, tz),
             })
         }
+        ArrowDataType::Dictionary(k, v) => Ok(ScalarValue::Dictionary(
+            k.clone(),
+            Box::new(get_null_of_arrow_type(v).unwrap()),
+        )),
         //Unsupported types...
         ArrowDataType::Float16
         | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Union(_, _)
-        | ArrowDataType::Dictionary(_, _)
         | ArrowDataType::LargeList(_)
         | ArrowDataType::Struct(_)
         | ArrowDataType::List(_)

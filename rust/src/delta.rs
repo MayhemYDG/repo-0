@@ -10,17 +10,6 @@ use std::io::{BufRead, BufReader, Cursor};
 use std::sync::Arc;
 use std::{cmp::max, cmp::Ordering, collections::HashSet};
 
-use super::action;
-use super::action::{Action, DeltaOperation};
-use super::partitions::PartitionFilter;
-use super::schema::*;
-use super::table_state::DeltaTableState;
-use crate::action::{Add, Stats};
-use crate::delta_config::DeltaConfigError;
-use crate::operations::transaction::TransactionError;
-use crate::operations::vacuum::VacuumBuilder;
-use crate::storage::{commit_uri_from_version, ObjectStoreRef};
-
 use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use lazy_static::lazy_static;
@@ -33,6 +22,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use super::action;
+use super::action::{
+    find_latest_check_point_for_version, get_last_checkpoint, Action, DeltaOperation,
+};
+use super::partitions::PartitionFilter;
+use super::schema::*;
+use super::table_state::DeltaTableState;
+use crate::action::{Add, ProtocolError, Stats};
+use crate::errors::DeltaTableError;
+use crate::operations::vacuum::VacuumBuilder;
+use crate::storage::{commit_uri_from_version, ObjectStoreRef};
+
 // TODO re-exports only for transition
 pub use crate::builder::{DeltaTableBuilder, DeltaTableConfig, DeltaVersion};
 
@@ -41,8 +42,8 @@ pub use crate::builder::{DeltaTableBuilder, DeltaTableConfig, DeltaVersion};
 pub struct CheckPoint {
     /// Delta table version
     pub(crate) version: i64, // 20 digits decimals
-    size: i64,
-    parts: Option<u32>, // 10 digits decimals
+    pub(crate) size: i64,
+    pub(crate) parts: Option<u32>, // 10 digits decimals
 }
 
 impl CheckPoint {
@@ -63,213 +64,6 @@ impl PartialEq for CheckPoint {
 }
 
 impl Eq for CheckPoint {}
-
-/// A result returned by delta-rs
-pub type DeltaResult<T> = Result<T, DeltaTableError>;
-
-/// Delta Table specific error
-#[derive(thiserror::Error, Debug)]
-pub enum DeltaTableError {
-    /// Error returned when applying transaction log failed.
-    #[error("Failed to apply transaction log: {}", .source)]
-    ApplyLog {
-        /// Apply error details returned when applying transaction log failed.
-        #[from]
-        source: ApplyLogError,
-    },
-    /// Error returned when loading checkpoint failed.
-    #[error("Failed to load checkpoint: {}", .source)]
-    LoadCheckpoint {
-        /// Load checkpoint error details returned when loading checkpoint failed.
-        #[from]
-        source: LoadCheckpointError,
-    },
-    /// Error returned when reading the delta log object failed.
-    #[error("Failed to read delta log object: {}", .source)]
-    ObjectStore {
-        /// Storage error details when reading the delta log object failed.
-        #[from]
-        source: ObjectStoreError,
-    },
-
-    /// Error returned when parsing checkpoint parquet.
-    #[cfg(any(feature = "parquet", feature = "parquet2"))]
-    #[error("Failed to parse parquet: {}", .source)]
-    Parquet {
-        /// Parquet error details returned when reading the checkpoint failed.
-        #[cfg(feature = "parquet")]
-        #[from]
-        source: parquet::errors::ParquetError,
-        /// Parquet error details returned when reading the checkpoint failed.
-        #[cfg(feature = "parquet2")]
-        #[from]
-        source: parquet2::error::Error,
-    },
-
-    /// Error returned when converting the schema in Arrow format failed.
-    #[cfg(feature = "arrow")]
-    #[error("Failed to convert into Arrow schema: {}", .source)]
-    Arrow {
-        /// Arrow error details returned when converting the schema in Arrow format failed
-        #[from]
-        source: arrow::error::ArrowError,
-    },
-
-    /// Error returned when the log record has an invalid JSON.
-    #[error("Invalid JSON in log record, version={}, line=`{}`, err=`{}`", .version, .line, .json_err)]
-    InvalidJsonLog {
-        /// JSON error details returned when parsing the record JSON.
-        json_err: serde_json::error::Error,
-        /// invalid log entry content.
-        line: String,
-        /// corresponding table version for the log file.
-        version: i64,
-    },
-    /// Error returned when the log contains invalid stats JSON.
-    #[error("Invalid JSON in file stats: {}", .json_err)]
-    InvalidStatsJson {
-        /// JSON error details returned when parsing the stats JSON.
-        json_err: serde_json::error::Error,
-    },
-    /// Error returned when the log contains invalid stats JSON.
-    #[error("Invalid JSON in invariant expression, line=`{line}`, err=`{json_err}`")]
-    InvalidInvariantJson {
-        /// JSON error details returned when parsing the invariant expression JSON.
-        json_err: serde_json::error::Error,
-        /// Invariant expression.
-        line: String,
-    },
-    /// Error returned when the DeltaTable has an invalid version.
-    #[error("Invalid table version: {0}")]
-    InvalidVersion(i64),
-    /// Error returned when the DeltaTable has no data files.
-    #[error("Corrupted table, cannot read data file {}: {}", .path, .source)]
-    MissingDataFile {
-        /// Source error details returned when the DeltaTable has no data files.
-        source: std::io::Error,
-        /// The Path used of the DeltaTable
-        path: String,
-    },
-    /// Error returned when the datetime string is invalid for a conversion.
-    #[error("Invalid datetime string: {}", .source)]
-    InvalidDateTimeString {
-        /// Parse error details returned of the datetime string parse error.
-        #[from]
-        source: chrono::ParseError,
-    },
-    /// Error returned when the action record is invalid in log.
-    #[error("Invalid action record found in log: {}", .source)]
-    InvalidAction {
-        /// Action error details returned of the invalid action.
-        #[from]
-        source: action::ActionError,
-    },
-    /// Error returned when attempting to write bad data to the table
-    #[error("Attempted to write invalid data to the table: {:#?}", violations)]
-    InvalidData {
-        /// Action error details returned of the invalid action.
-        violations: Vec<String>,
-    },
-    /// Error returned when it is not a DeltaTable.
-    #[error("Not a Delta table: {0}")]
-    NotATable(String),
-
-    /// Error returned when no metadata was found in the DeltaTable.
-    #[error("No metadata found, please make sure table is loaded.")]
-    NoMetadata,
-    /// Error returned when no schema was found in the DeltaTable.
-    #[error("No schema found, please make sure table is loaded.")]
-    NoSchema,
-    /// Error returned when no partition was found in the DeltaTable.
-    #[error("No partitions found, please make sure table is partitioned.")]
-    LoadPartitions,
-
-    /// Error returned when writes are attempted with data that doesn't match the schema of the
-    /// table
-    #[error("Data does not match the schema or partitions of the table: {}", msg)]
-    SchemaMismatch {
-        /// Information about the mismatch
-        msg: String,
-    },
-
-    /// Error returned when a partition is not formatted as a Hive Partition.
-    #[error("This partition is not formatted with key=value: {}", .partition)]
-    PartitionError {
-        /// The malformed partition used.
-        partition: String,
-    },
-    /// Error returned when a invalid partition filter was found.
-    #[error("Invalid partition filter found: {}.", .partition_filter)]
-    InvalidPartitionFilter {
-        /// The invalid partition filter used.
-        partition_filter: String,
-    },
-    /// Error returned when a partition filter uses a nonpartitioned column.
-    #[error("Tried to filter partitions on non-partitioned columns: {:#?}", .nonpartitioned_columns)]
-    ColumnsNotPartitioned {
-        /// The columns used in the partition filter that is not partitioned
-        nonpartitioned_columns: Vec<String>,
-    },
-    /// Error returned when a line from log record is invalid.
-    #[error("Failed to read line from log record")]
-    Io {
-        /// Source error details returned while reading the log record.
-        #[from]
-        source: std::io::Error,
-    },
-    /// Error raised while commititng transaction
-    #[error("Transaction failed: {source}")]
-    Transaction {
-        /// The source error
-        source: TransactionError,
-    },
-    /// Error returned when transaction is failed to be committed because given version already exists.
-    #[error("Delta transaction failed, version {0} already exists.")]
-    VersionAlreadyExists(i64),
-    /// Error returned when user attempts to commit actions that don't belong to the next version.
-    #[error("Delta transaction failed, version {0} does not follow {1}")]
-    VersionMismatch(i64, i64),
-    /// A Feature is missing to perform operation
-    #[error("Delta-rs must be build with feature '{feature}' to support loading from: {url}.")]
-    MissingFeature {
-        /// Name of the missing feature
-        feature: &'static str,
-        /// Storage location url
-        url: String,
-    },
-    /// A Feature is missing to perform operation
-    #[error("Cannot infer storage location from: {0}")]
-    InvalidTableLocation(String),
-    /// Generic Delta Table error
-    #[error("Log JSON serialization error: {json_err}")]
-    SerializeLogJson {
-        /// JSON serialization error
-        json_err: serde_json::error::Error,
-    },
-    /// Generic Delta Table error
-    #[error("Schema JSON serialization error: {json_err}")]
-    SerializeSchemaJson {
-        /// JSON serialization error
-        json_err: serde_json::error::Error,
-    },
-    /// Generic Delta Table error
-    #[error("Generic DeltaTable error: {0}")]
-    Generic(String),
-    /// Generic Delta Table error
-    #[error("Generic error: {source}")]
-    GenericError {
-        /// Source error
-        source: Box<dyn std::error::Error + Send + Sync + 'static>,
-    },
-}
-
-impl From<object_store::path::Error> for DeltaTableError {
-    fn from(err: object_store::path::Error) -> Self {
-        Self::GenericError {
-            source: Box::new(err),
-        }
-    }
-}
 
 /// Delta table metadata
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -354,7 +148,7 @@ impl fmt::Display for DeltaTableMetaData {
 }
 
 impl TryFrom<action::MetaData> for DeltaTableMetaData {
-    type Error = serde_json::error::Error;
+    type Error = ProtocolError;
 
     fn try_from(action_metadata: action::MetaData) -> Result<Self, Self::Error> {
         let schema = action_metadata.get_schema()?;
@@ -368,87 +162,6 @@ impl TryFrom<action::MetaData> for DeltaTableMetaData {
             created_time: action_metadata.created_time,
             configuration: action_metadata.configuration,
         })
-    }
-}
-
-/// Error related to Delta log application
-#[derive(thiserror::Error, Debug)]
-pub enum ApplyLogError {
-    /// Error returned when the end of transaction log is reached.
-    #[error("End of transaction log")]
-    EndOfLog,
-    /// Error returned when the JSON of the log record is invalid.
-    #[error("Invalid JSON found when applying log record")]
-    InvalidJson {
-        /// JSON error details returned when reading the JSON log record.
-        #[from]
-        source: serde_json::error::Error,
-    },
-    /// Error returned when the storage failed to read the log content.
-    #[error("Failed to read log content")]
-    Storage {
-        /// Storage error details returned while reading the log content.
-        source: ObjectStoreError,
-    },
-    /// Error returned when reading delta config failed.
-    #[error("Failed to read delta config: {}", .source)]
-    Config {
-        /// Delta config error returned when reading delta config failed.
-        #[from]
-        source: DeltaConfigError,
-    },
-    /// Error returned when a line from log record is invalid.
-    #[error("Failed to read line from log record")]
-    Io {
-        /// Source error details returned while reading the log record.
-        #[from]
-        source: std::io::Error,
-    },
-    /// Error returned when the action record is invalid in log.
-    #[error("Invalid action record found in log: {}", .source)]
-    InvalidAction {
-        /// Action error details returned of the invalid action.
-        #[from]
-        source: action::ActionError,
-    },
-}
-
-impl From<ObjectStoreError> for ApplyLogError {
-    fn from(error: ObjectStoreError) -> Self {
-        match error {
-            ObjectStoreError::NotFound { .. } => ApplyLogError::EndOfLog,
-            _ => ApplyLogError::Storage { source: error },
-        }
-    }
-}
-
-/// Error related to checkpoint loading
-#[derive(thiserror::Error, Debug)]
-pub enum LoadCheckpointError {
-    /// Error returned when the JSON checkpoint is not found.
-    #[error("Checkpoint file not found")]
-    NotFound,
-    /// Error returned when the JSON checkpoint is invalid.
-    #[error("Invalid JSON in checkpoint: {source}")]
-    InvalidJson {
-        /// Error details returned while reading the JSON.
-        #[from]
-        source: serde_json::error::Error,
-    },
-    /// Error returned when it failed to read the checkpoint content.
-    #[error("Failed to read checkpoint content: {source}")]
-    Storage {
-        /// Storage error details returned while reading the checkpoint content.
-        source: ObjectStoreError,
-    },
-}
-
-impl From<ObjectStoreError> for LoadCheckpointError {
-    fn from(error: ObjectStoreError) -> Self {
-        match error {
-            ObjectStoreError::NotFound { .. } => LoadCheckpointError::NotFound,
-            _ => LoadCheckpointError::Storage { source: error },
-        }
     }
 }
 
@@ -634,86 +347,6 @@ impl DeltaTable {
         Ok(current_delta_log_ver)
     }
 
-    async fn get_last_checkpoint(&self) -> Result<CheckPoint, LoadCheckpointError> {
-        let last_checkpoint_path = Path::from_iter(["_delta_log", "_last_checkpoint"]);
-        debug!("loading checkpoint from {last_checkpoint_path}");
-        match self.storage.get(&last_checkpoint_path).await {
-            Ok(data) => Ok(serde_json::from_slice(&data.bytes().await?)?),
-            Err(ObjectStoreError::NotFound { .. }) => {
-                match self.find_latest_check_point_for_version(i64::MAX).await {
-                    Ok(Some(cp)) => Ok(cp),
-                    _ => Err(LoadCheckpointError::NotFound),
-                }
-            }
-            Err(err) => Err(LoadCheckpointError::Storage { source: err }),
-        }
-    }
-
-    async fn find_latest_check_point_for_version(
-        &self,
-        version: i64,
-    ) -> Result<Option<CheckPoint>, DeltaTableError> {
-        lazy_static! {
-            static ref CHECKPOINT_REGEX: Regex =
-                Regex::new(r#"^_delta_log/(\d{20})\.checkpoint\.parquet$"#).unwrap();
-            static ref CHECKPOINT_PARTS_REGEX: Regex =
-                Regex::new(r#"^_delta_log/(\d{20})\.checkpoint\.\d{10}\.(\d{10})\.parquet$"#)
-                    .unwrap();
-        }
-
-        let mut cp: Option<CheckPoint> = None;
-        let mut stream = self.storage.list(Some(self.storage.log_path())).await?;
-
-        while let Some(obj_meta) = stream.next().await {
-            // Exit early if any objects can't be listed.
-            // We exclude the special case of a not found error on some of the list entities.
-            // This error mainly occurs for local stores when a temporary file has been deleted by
-            // concurrent writers or if the table is vacuumed by another client.
-            let obj_meta = match obj_meta {
-                Ok(meta) => Ok(meta),
-                Err(ObjectStoreError::NotFound { .. }) => continue,
-                Err(err) => Err(err),
-            }?;
-            if let Some(captures) = CHECKPOINT_REGEX.captures(obj_meta.location.as_ref()) {
-                let curr_ver_str = captures.get(1).unwrap().as_str();
-                let curr_ver: i64 = curr_ver_str.parse().unwrap();
-                if curr_ver > version {
-                    // skip checkpoints newer than max version
-                    continue;
-                }
-                if cp.is_none() || curr_ver > cp.unwrap().version {
-                    cp = Some(CheckPoint {
-                        version: curr_ver,
-                        size: 0,
-                        parts: None,
-                    });
-                }
-                continue;
-            }
-
-            if let Some(captures) = CHECKPOINT_PARTS_REGEX.captures(obj_meta.location.as_ref()) {
-                let curr_ver_str = captures.get(1).unwrap().as_str();
-                let curr_ver: i64 = curr_ver_str.parse().unwrap();
-                if curr_ver > version {
-                    // skip checkpoints newer than max version
-                    continue;
-                }
-                if cp.is_none() || curr_ver > cp.unwrap().version {
-                    let parts_str = captures.get(2).unwrap().as_str();
-                    let parts = parts_str.parse().unwrap();
-                    cp = Some(CheckPoint {
-                        version: curr_ver,
-                        size: 0,
-                        parts: Some(parts),
-                    });
-                }
-                continue;
-            }
-        }
-
-        Ok(cp)
-    }
-
     #[cfg(any(feature = "parquet", feature = "parquet2"))]
     async fn restore_checkpoint(&mut self, check_point: CheckPoint) -> Result<(), DeltaTableError> {
         self.state = DeltaTableState::from_checkpoint(self, &check_point).await?;
@@ -722,14 +355,14 @@ impl DeltaTable {
     }
 
     async fn get_latest_version(&mut self) -> Result<i64, DeltaTableError> {
-        let mut version = match self.get_last_checkpoint().await {
+        let mut version = match get_last_checkpoint(&self.storage).await {
             Ok(last_check_point) => last_check_point.version + 1,
-            Err(LoadCheckpointError::NotFound) => {
+            Err(ProtocolError::CheckpointNotFound) => {
                 // no checkpoint, start with version 0
                 0
             }
             Err(e) => {
-                return Err(DeltaTableError::LoadCheckpoint { source: e });
+                return Err(DeltaTableError::from(e));
             }
         };
 
@@ -749,11 +382,7 @@ impl DeltaTable {
                         ObjectStoreError::NotFound { .. } => {
                             version -= 1;
                             if version < 0 {
-                                let err = format!(
-                                    "No snapshot or version 0 found, perhaps {} is an empty dir?",
-                                    self.table_uri()
-                                );
-                                return Err(DeltaTableError::NotATable(err));
+                                return Err(DeltaTableError::not_a_table(self.table_uri()));
                             }
                         }
                         _ => return Err(DeltaTableError::from(e)),
@@ -814,7 +443,7 @@ impl DeltaTable {
     /// loading the last checkpoint and incrementally applying each version since.
     #[cfg(any(feature = "parquet", feature = "parquet2"))]
     pub async fn update(&mut self) -> Result<(), DeltaTableError> {
-        match self.get_last_checkpoint().await {
+        match get_last_checkpoint(&self.storage).await {
             Ok(last_check_point) => {
                 debug!("update with latest checkpoint {last_check_point:?}");
                 if Some(last_check_point) == self.last_check_point {
@@ -825,11 +454,11 @@ impl DeltaTable {
                     self.update_incremental(None).await
                 }
             }
-            Err(LoadCheckpointError::NotFound) => {
+            Err(ProtocolError::CheckpointNotFound) => {
                 debug!("update without checkpoint");
                 self.update_incremental(None).await
             }
-            Err(source) => Err(DeltaTableError::LoadCheckpoint { source }),
+            Err(err) => Err(DeltaTableError::from(err)),
         }
     }
 
@@ -863,11 +492,7 @@ impl DeltaTable {
         }
 
         if self.version() == -1 {
-            let err = format!(
-                "No snapshot or version 0 found, perhaps {} is an empty dir?",
-                self.table_uri()
-            );
-            return Err(DeltaTableError::NotATable(err));
+            return Err(DeltaTableError::not_a_table(self.table_uri()));
         }
 
         Ok(())
@@ -889,7 +514,7 @@ impl DeltaTable {
 
         // 1. find latest checkpoint below version
         #[cfg(any(feature = "parquet", feature = "parquet2"))]
-        match self.find_latest_check_point_for_version(version).await? {
+        match find_latest_check_point_for_version(&self.storage, version).await? {
             Some(check_point) => {
                 self.restore_checkpoint(check_point).await?;
             }
@@ -946,7 +571,7 @@ impl DeltaTable {
                 }
                 Err(e) => {
                     match e {
-                        ApplyLogError::EndOfLog => {
+                        ProtocolError::EndOfLog => {
                             if earliest_commit.is_none() {
                                 earliest_commit =
                                     Some(self.get_earliest_delta_log_version().await?);
@@ -959,11 +584,7 @@ impl DeltaTable {
                             } else {
                                 version -= 1;
                                 if version == -1 {
-                                    let err = format!(
-                                        "No snapshot or version 0 found, perhaps {} is an empty dir?",
-                                        self.table_uri()
-                                    );
-                                    return Err(DeltaTableError::NotATable(err));
+                                    return Err(DeltaTableError::not_a_table(self.table_uri()));
                                 }
                             }
                         }

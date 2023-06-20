@@ -813,7 +813,7 @@ async fn test_datafusion_scan_timestamps() -> Result<()> {
 #[tokio::test]
 async fn test_issue_1292_datafusion_sql_projection() -> Result<()> {
     let ctx = SessionContext::new();
-    let table = deltalake::open_table("./tests/data/http_requests")
+    let table = deltalake::open_table("./tests/data/issue_1292")
         .await
         .unwrap();
     ctx.register_table("http_requests", Arc::new(table))?;
@@ -844,7 +844,7 @@ async fn test_issue_1292_datafusion_sql_projection() -> Result<()> {
 #[tokio::test]
 async fn test_issue_1291_datafusion_sql_partitioned_data() -> Result<()> {
     let ctx = SessionContext::new();
-    let table = deltalake::open_table("./tests/data/http_requests")
+    let table = deltalake::open_table("./tests/data/issue_1291")
         .await
         .unwrap();
     ctx.register_table("http_requests", Arc::new(table))?;
@@ -867,6 +867,75 @@ async fn test_issue_1291_datafusion_sql_partitioned_data() -> Result<()> {
         "| /                | 2023-04-14 |",
         "| /                | 2023-04-14 |",
         "+------------------+------------+",
+    ];
+
+    assert_batches_sorted_eq!(&expected, &batches);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_issue_1374() -> Result<()> {
+    let ctx = SessionContext::new();
+    let table = deltalake::open_table("./tests/data/issue_1374")
+        .await
+        .unwrap();
+    ctx.register_table("t", Arc::new(table))?;
+
+    let batches = ctx
+        .sql(
+            r#"SELECT *
+        FROM t
+        WHERE timestamp BETWEEN '2023-05-24T00:00:00.000Z' AND '2023-05-25T00:00:00.000Z'
+        LIMIT 5
+        "#,
+        )
+        .await?
+        .collect()
+        .await?;
+
+    let expected = vec![
+        "+----------------------------+-------------+------------+",
+        "| timestamp                  | temperature | date       |",
+        "+----------------------------+-------------+------------+",
+        "| 2023-05-24T00:01:25.010301 | 8           | 2023-05-24 |",
+        "| 2023-05-24T00:01:25.013902 | 21          | 2023-05-24 |",
+        "| 2023-05-24T00:01:25.013972 | 58          | 2023-05-24 |",
+        "| 2023-05-24T00:01:25.014025 | 24          | 2023-05-24 |",
+        "| 2023-05-24T00:01:25.014072 | 90          | 2023-05-24 |",
+        "+----------------------------+-------------+------------+",
+    ];
+
+    assert_batches_sorted_eq!(&expected, &batches);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_issue_1445_date_partition() -> Result<()> {
+    let ctx = SessionContext::new();
+    let table = deltalake::open_table("./tests/data/issue_1445")
+        .await
+        .unwrap();
+    ctx.register_table("t", Arc::new(table))?;
+
+    let batches = ctx
+        .sql(
+            r#"SELECT *
+        FROM t
+        WHERE date > '2023-06-07'
+        "#,
+        )
+        .await?
+        .collect()
+        .await?;
+
+    let expected = vec![
+        "+----+------------+",
+        "| id | date       |",
+        "+----+------------+",
+        "| 2  | 2023-06-08 |",
+        "+----+------------+",
     ];
 
     assert_batches_sorted_eq!(&expected, &batches);

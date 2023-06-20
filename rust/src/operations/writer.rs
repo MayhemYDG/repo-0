@@ -7,7 +7,7 @@ use crate::storage::ObjectStoreRef;
 use crate::writer::record_batch::{divide_by_partition_values, PartitionResult};
 use crate::writer::stats::create_add;
 use crate::writer::utils::{
-    arrow_schema_without_partitions, record_batch_without_partitions, PartitionPath,
+    self, arrow_schema_without_partitions, record_batch_without_partitions, PartitionPath,
     ShareableBuffer,
 };
 use crate::{crate_version, DeltaResult, DeltaTableError};
@@ -296,12 +296,14 @@ impl PartitionWriter {
     }
 
     fn next_data_path(&mut self) -> Path {
-        let part = format!("{:0>5}", self.part_counter);
         self.part_counter += 1;
-        // TODO: what does c000 mean?
-        // TODO handle file name for different compressions
-        let file_name = format!("part-{}-{}-c000.snappy.parquet", part, self.writer_id);
-        self.config.prefix.child(file_name)
+
+        utils::next_data_path(
+            &self.config.prefix,
+            self.part_counter,
+            &self.writer_id,
+            &self.config.writer_properties,
+        )
     }
 
     fn reset_writer(&mut self) -> DeltaResult<(ArrowWriter<ShareableBuffer>, ShareableBuffer)> {

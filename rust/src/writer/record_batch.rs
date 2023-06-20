@@ -28,18 +28,6 @@
 //! ```
 use std::{collections::HashMap, sync::Arc};
 
-use super::{
-    stats::create_add,
-    utils::{
-        arrow_schema_without_partitions, next_data_path, record_batch_without_partitions,
-        stringified_partition_value, PartitionPath,
-    },
-    DeltaWriter, DeltaWriterError,
-};
-use crate::builder::DeltaTableBuilder;
-use crate::writer::utils::ShareableBuffer;
-use crate::DeltaTableError;
-use crate::{action::Add, storage::DeltaObjectStore, DeltaTable, DeltaTableMetaData, Schema};
 use arrow::array::{Array, UInt32Array};
 use arrow::compute::{lexicographical_partition_ranges, take, SortColumn};
 use arrow::datatypes::{Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
@@ -48,9 +36,20 @@ use arrow::record_batch::RecordBatch;
 use arrow_array::ArrayRef;
 use arrow_row::{RowConverter, SortField};
 use bytes::Bytes;
-use object_store::ObjectStore;
+use object_store::{path::Path, ObjectStore};
 use parquet::{arrow::ArrowWriter, errors::ParquetError};
 use parquet::{basic::Compression, file::properties::WriterProperties};
+use uuid::Uuid;
+
+use super::stats::create_add;
+use super::utils::{
+    arrow_schema_without_partitions, next_data_path, record_batch_without_partitions,
+    stringified_partition_value, PartitionPath, ShareableBuffer,
+};
+use super::{DeltaWriter, DeltaWriterError};
+use crate::builder::DeltaTableBuilder;
+use crate::errors::DeltaTableError;
+use crate::{action::Add, storage::DeltaObjectStore, DeltaTable, DeltaTableMetaData, Schema};
 
 /// Writes messages to a delta lake table.
 pub struct RecordBatchWriter {
@@ -228,7 +227,11 @@ impl DeltaWriter<RecordBatch> for RecordBatchWriter {
 
         for (_, writer) in writers {
             let metadata = writer.arrow_writer.close()?;
-            let path = next_data_path(&self.partition_columns, &writer.partition_values, None)?;
+            let prefix =
+                PartitionPath::from_hashmap(&self.partition_columns, &writer.partition_values)?;
+            let prefix = Path::parse(prefix)?;
+            let uuid = Uuid::new_v4();
+            let path = next_data_path(&prefix, 0, &uuid, &writer.writer_properties);
             let obj_bytes = Bytes::from(writer.buffer.to_vec());
             let file_size = obj_bytes.len() as i64;
             self.storage.put(&path, obj_bytes).await?;
