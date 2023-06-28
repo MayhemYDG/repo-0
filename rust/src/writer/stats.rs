@@ -154,9 +154,17 @@ impl StatsScalar {
                 Ok(Self::Date(date))
             }
             (Statistics::Int32(v), Some(LogicalType::Decimal { scale, .. })) => {
-                let val = get_stat!(v) as f64 / 10.0_f64.powi(*scale);
+                let val = get_stat!(v);
                 // Spark serializes these as numbers
-                Ok(Self::Decimal(val.to_string()))
+                let str_val = val.to_string();
+                let decimal_string = if str_val.len() > *scale as usize {
+                    let (integer_part, fractional_part) =
+                        str_val.split_at(str_val.len() - *scale as usize);
+                    format!("{}.{}", integer_part, fractional_part)
+                } else {
+                    format!("0.{}", str_val)
+                };
+                Ok(Self::Decimal(decimal_string))
             }
             (Statistics::Int32(v), _) => Ok(Self::Int32(get_stat!(v))),
             // Int64 can be timestamp, decimal, or integer
@@ -181,9 +189,17 @@ impl StatsScalar {
                 Ok(Self::Timestamp(timestamp))
             }
             (Statistics::Int64(v), Some(LogicalType::Decimal { scale, .. })) => {
-                let val = get_stat!(v) as f64 / 10.0_f64.powi(*scale);
+                let val = get_stat!(v);
                 // Spark serializes these as numbers
-                Ok(Self::Decimal(val.to_string()))
+                let str_val = val.to_string();
+                let decimal_string = if str_val.len() > *scale as usize {
+                    let (integer_part, fractional_part) =
+                        str_val.split_at(str_val.len() - *scale as usize);
+                    format!("{}.{}", integer_part, fractional_part)
+                } else {
+                    format!("0.{}", str_val)
+                };
+                Ok(Self::Decimal(decimal_string))
             }
             (Statistics::Int64(v), _) => Ok(Self::Int64(get_stat!(v))),
             (Statistics::Float(v), _) => Ok(Self::Float32(get_stat!(v))),
