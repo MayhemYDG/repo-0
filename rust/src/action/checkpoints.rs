@@ -434,7 +434,7 @@ fn checkpoint_add_from_state(
     }
 
     if let Ok(Some(stats)) = add.get_stats() {
-      println!("Stats {stats}");
+      println!("Stats {:?}", stats);
         let mut stats =
             serde_json::to_value(stats).map_err(|err| ArrowError::JsonError(err.to_string()))?;
         let min_values = stats.get_mut("minValues").and_then(|v| v.as_object_mut());
