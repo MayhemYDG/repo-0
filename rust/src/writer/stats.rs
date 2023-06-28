@@ -260,7 +260,11 @@ impl StatsScalar {
                 let decimal_string = if str_val.len() > *scale as usize {
                     let (integer_part, fractional_part) =
                         str_val.split_at(str_val.len() - *scale as usize);
-                    format!("{}.{}", integer_part, fractional_part)
+                    if fractional_part.len() == 0 {
+                      integer_part.to_string()
+                    } else {
+                      format!("{}.{}", integer_part, fractional_part)
+                    }
                 } else {
                     format!("0.{}", str_val)
                 };
