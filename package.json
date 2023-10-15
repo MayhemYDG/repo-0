@@ -72,7 +72,7 @@
     ]
   },
   "scripts": {
-    "pretest": "eslint .",
+    "pretest": "eslint generator-octopus-reference-architecture-apps",
     "test": "jest"
   },
   "repository": "https://github.com/OctopusSolutionsEngineering/ReferenceArchitectureAppGenerators.git",
