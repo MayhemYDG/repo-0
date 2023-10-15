@@ -29,8 +29,8 @@ jobs:
         with:
           tag_name: ${{ steps.determine_version.outputs.semVer }}+run${{ github.run_number }}-attempt${{ github.run_attempt }}
           release_name: Release ${{ steps.determine_version.outputs.semVer }} Run ${{ github.run_number }} Attempt ${{ github.run_attempt }}
-          draft: ${{ github.ref == 'refs/heads/master' && 'false' || 'true' }}
-          name: ${{ github.ref == 'refs/heads/master' && 'false' || 'true' }}
+          draft: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+          name: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
 permissions:
   id-token: write
   checks: write
