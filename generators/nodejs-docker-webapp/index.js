@@ -4,6 +4,15 @@ const chalk = require("chalk");
 const yosay = require("yosay");
 
 module.exports = class extends Generator {
+  // note: arguments and options should be defined in the constructor.
+  constructor(args, opts) {
+    super(args, opts);
+
+    this.option("octopusUrl");
+    this.option("octopusApi");
+    this.option("octopusSpace");
+  }
+
   prompting() {
     // Have Yeoman greet the user.
     this.log(
