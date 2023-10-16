@@ -14,14 +14,7 @@ module.exports = class extends Generator {
       )
     );
 
-    const prompts = [
-      {
-        type: "confirm",
-        name: "someAnswer",
-        message: "Would you like to enable this option?",
-        default: true
-      }
-    ];
+    const prompts = [];
 
     return this.prompt(prompts).then(props => {
       // To access props later use this.props.someAnswer;
