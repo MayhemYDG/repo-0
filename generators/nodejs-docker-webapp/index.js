@@ -23,6 +23,7 @@ module.exports = class extends Generator {
   }
 
   writing() {
+    console.log("CWD: " + process.cwd());
     this.fs.copyTpl(
       this.templatePath("**/*"),
       this.destinationPath(this.destinationRoot()),
