@@ -8,9 +8,13 @@ module.exports = class extends Generator {
   constructor(args, opts) {
     super(args, opts);
 
-    this.option("octopusUrl");
-    this.option("octopusApi");
-    this.option("octopusSpace");
+    this.argument("octopusUrl", { type: String, required: true });
+    this.argument("octopusApi", { type: String, required: true });
+    this.argument("octopusSpace", { type: String, required: true });
+
+
+    this.log("Octopus URL: " + this.options.octopusUrl);
+    this.log("Octopus Space: " + this.options.octopusSpace);
   }
 
   prompting() {
