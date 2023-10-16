@@ -4,14 +4,13 @@ const chalk = require("chalk");
 const yosay = require("yosay");
 
 module.exports = class extends Generator {
-  // note: arguments and options should be defined in the constructor.
+  // Note: arguments and options should be defined in the constructor.
   constructor(args, opts) {
     super(args, opts);
 
-    this.argument("octopusUrl", { type: String, required: true });
-    this.argument("octopusApi", { type: String, required: true });
-    this.argument("octopusSpace", { type: String, required: true });
-
+    this.option("octopusUrl", { type: String, required: true });
+    this.option("octopusApi", { type: String, required: true });
+    this.option("octopusSpace", { type: String, required: true });
 
     this.log("Octopus URL: " + this.options.octopusUrl);
     this.log("Octopus Space: " + this.options.octopusSpace);
