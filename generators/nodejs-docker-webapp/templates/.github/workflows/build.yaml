@@ -27,7 +27,6 @@ jobs:
       - name: Generate SBOM
         run: cyclonedx-npm --ignore-npm-errors --output-file bom.json
         shell: bash
-        working-directory: js/frontend
 
       - id: determine_version
         name: Determine Version
