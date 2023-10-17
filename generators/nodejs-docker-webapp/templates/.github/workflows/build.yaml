@@ -18,7 +18,7 @@ jobs:
         with:
           versionSpec: 5.x
 
-      - name: Instance CycloneDX
+      - name: Install CycloneDX
         run: npm install --global @cyclonedx/cyclonedx-npm
         shell: bash
 
