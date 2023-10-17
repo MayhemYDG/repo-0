@@ -18,6 +18,17 @@ jobs:
         with:
           versionSpec: 5.x
 
+      - name: Instance CycloneDX
+        run: npm install --global @cyclonedx/cyclonedx-npm
+        shell: bash
+
+      # This step generates a Source Bill of Materials (SBOM) package that captures all the dependencies compiled
+      # into the application.
+      - name: Generate SBOM
+        run: cyclonedx-npm --ignore-npm-errors --output-file bom.json
+        shell: bash
+        working-directory: js/frontend
+
       - id: determine_version
         name: Determine Version
         uses: gittools/actions/gitversion/execute@v0.9.15
