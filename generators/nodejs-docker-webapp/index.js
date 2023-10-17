@@ -11,9 +11,13 @@ module.exports = class extends Generator {
     this.option("octopusUrl", { type: String, required: true });
     this.option("octopusApi", { type: String, required: true });
     this.option("octopusSpace", { type: String, required: true });
+    this.option("octopusProject", { type: String, required: true });
+    this.option("dockerImage", { type: String, required: true });
 
     this.log("Octopus URL: " + this.options.octopusUrl);
     this.log("Octopus Space: " + this.options.octopusSpace);
+    this.log("Octopus Project: " + this.options.octopusProject);
+    this.log("Docker Image: " + this.options.dockerImage);
   }
 
   prompting() {
@@ -39,7 +43,12 @@ module.exports = class extends Generator {
     this.fs.copyTpl(
       this.templatePath("**/*"),
       this.destinationPath(this.destinationRoot()),
-      null,
+      {
+        octopusUrl: this.options.octopusUrl,
+        octopusSpace: this.options.octopusSpace,
+        dockerImage: this.options.dockerImage,
+        octopusProject: this.options.octopusProject
+      },
       null,
       {
         globOptions: {
