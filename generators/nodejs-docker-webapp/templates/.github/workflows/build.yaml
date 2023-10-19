@@ -78,8 +78,8 @@ jobs:
         if: ${{ false }}
         uses: OctopusDeploy/create-release-action@v3
         env:
-          OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_TOKEN }}
-          OCTOPUS_URL: <%= octopusUrl %>
-          OCTOPUS_SPACE: <%= octopusSpace %>
+          OCTOPUS_API_KEY: "${{ secrets.OCTOPUS_API_TOKEN }}"
+          OCTOPUS_URL: "<%= octopusUrl %>"
+          OCTOPUS_SPACE: "<%= octopusSpace %>"
         with:
-          project: <%= octopusProject %>
+          project: "<%= octopusProject %>"
