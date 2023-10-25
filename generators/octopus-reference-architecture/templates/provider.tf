@@ -1,4 +1,13 @@
 #region Provider
+terraform {
+  required_providers {
+    octopusdeploy = {
+      source = "OctopusDeployLabs/octopusdeploy"
+      version = "0.13.1"
+    }
+  }
+}
+
 variable "octopus_server" {
   type        = string
   nullable    = false
