@@ -276,7 +276,7 @@ resource "octopusdeploy_deployment_process" "orchestration" {
         "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
         "Octopus.Action.RunOnServer" = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
-        "Octopus.Action.DeployRelease.ProjectId" = "Projects-5109"
+        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend.id : data.octopusdeploy_projects.frontend.projects[0].id
       }
       environments                       = []
       excluded_environments              = []
@@ -312,7 +312,7 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_required                        = false
       worker_pool_id                     = ""
       properties                         = {
-        "Octopus.Action.DeployRelease.ProjectId" = "Projects-5110"
+        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products.id : data.octopusdeploy_projects.products.projects[0].id
         "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
         "Octopus.Action.RunOnServer" = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
@@ -353,7 +353,7 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       properties                         = {
         "Octopus.Action.RunOnServer" = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
-        "Octopus.Action.DeployRelease.ProjectId" = "Projects-5107"
+        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits.id : data.octopusdeploy_projects.audits.projects[0].id
         "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
       }
       environments                       = []
@@ -388,7 +388,7 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_disabled                        = false
       can_be_used_for_project_versioning = false
       is_required                        = false
-      worker_pool_id                     = "${data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id}"
+      worker_pool_id                     = local.worker_pool_id
       properties                         = {
         "Octopus.Action.Script.ScriptBody" = local.feedback_script
         "Octopus.Action.Script.ScriptSource" = "Inline"

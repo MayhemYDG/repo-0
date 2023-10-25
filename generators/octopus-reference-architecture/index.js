@@ -19,6 +19,29 @@ module.exports = class extends Generator {
       required: true
     });
     this.option("feedbackLink", { type: String, required: true });
+    this.option("octopubFrontendProjectName", { type: String, required: true });
+    this.option("octopubFrontendProjectDescription", {
+      type: String,
+      required: true
+    });
+    this.option("octopubProductsProjectName", { type: String, required: true });
+    this.option("octopubProductsProjectDescription", {
+      type: String,
+      required: true
+    });
+    this.option("octopubAuditsProjectName", { type: String, required: true });
+    this.option("octopubAuditsProjectDescription", {
+      type: String,
+      required: true
+    });
+    this.option("octopubOrchestrationProjectName", {
+      type: String,
+      required: true
+    });
+    this.option("octopubOrchestrationProjectDescription", {
+      type: String,
+      required: true
+    });
   }
 
   prompting() {
@@ -51,7 +74,20 @@ module.exports = class extends Generator {
         infrastructureRunbookName: this.options.infrastructureRunbookName,
         infrastructureRunbookDescription: this.options
           .infrastructureRunbookDescription,
-        feedbackLink: this.options.feedbackLink
+        feedbackLink: this.options.feedbackLink,
+        octopubFrontendProjectName: this.options.octopubFrontendProjectName,
+        octopubFrontendProjectDescription: this.options
+          .octopubFrontendProjectDescription,
+        octopubProductsProjectName: this.options.octopubProductsProjectName,
+        octopubProductsProjectDescription: this.options
+          .octopubProductsProjectDescription,
+        octopubAuditsProjectName: this.options.octopubAuditsProjectName,
+        octopubAuditsProjectDescription: this.options
+          .octopubAuditsProjectDescription,
+        octopubOrchestrationProjectName: this.options
+          .octopubOrchestrationProjectName,
+        octopubOrchestrationProjectDescription: this.options
+          .octopubOrchestrationProjectDescription
       },
       null,
       {
