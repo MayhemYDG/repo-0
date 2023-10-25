@@ -254,8 +254,8 @@ resource "octopusdeploy_project" "orchestration" {
 }
 
 resource "octopusdeploy_deployment_process" "orchestration" {
-  project_id = octopusdeploy_project.orchestration.id
-  count                                = length(data.octopusdeploy_projects.orchestration.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.orchestration[0].id
+  count      = length(data.octopusdeploy_projects.orchestration.projects) == 0 ? 1 : 0
 
   step {
     condition           = "Success"
@@ -273,15 +273,15 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_required                        = false
       worker_pool_id                     = ""
       properties                         = {
-        "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
-        "Octopus.Action.RunOnServer" = "True"
+        "Octopus.Action.Package.DownloadOnTentacle"        = "NotAcquired"
+        "Octopus.Action.RunOnServer"                       = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
-        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend.id : data.octopusdeploy_projects.frontend.projects[0].id
+        "Octopus.Action.DeployRelease.ProjectId"           = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend.id : data.octopusdeploy_projects.frontend.projects[0].id
       }
-      environments                       = []
-      excluded_environments              = []
-      channels                           = []
-      tenant_tags                        = []
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
 
       primary_package {
         package_id           = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend.id : data.octopusdeploy_projects.frontend.projects[0].id
@@ -312,15 +312,15 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_required                        = false
       worker_pool_id                     = ""
       properties                         = {
-        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products.id : data.octopusdeploy_projects.products.projects[0].id
-        "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
-        "Octopus.Action.RunOnServer" = "True"
+        "Octopus.Action.DeployRelease.ProjectId"           = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products.id : data.octopusdeploy_projects.products.projects[0].id
+        "Octopus.Action.Package.DownloadOnTentacle"        = "NotAcquired"
+        "Octopus.Action.RunOnServer"                       = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
       }
-      environments                       = []
-      excluded_environments              = []
-      channels                           = []
-      tenant_tags                        = []
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
 
       primary_package {
         package_id           = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products.id : data.octopusdeploy_projects.products.projects[0].id
@@ -351,15 +351,15 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_required                        = false
       worker_pool_id                     = ""
       properties                         = {
-        "Octopus.Action.RunOnServer" = "True"
+        "Octopus.Action.RunOnServer"                       = "True"
         "Octopus.Action.DeployRelease.DeploymentCondition" = "Always"
-        "Octopus.Action.DeployRelease.ProjectId" = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits.id : data.octopusdeploy_projects.audits.projects[0].id
-        "Octopus.Action.Package.DownloadOnTentacle" = "NotAcquired"
+        "Octopus.Action.DeployRelease.ProjectId"           = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits.id : data.octopusdeploy_projects.audits.projects[0].id
+        "Octopus.Action.Package.DownloadOnTentacle"        = "NotAcquired"
       }
-      environments                       = []
-      excluded_environments              = []
-      channels                           = []
-      tenant_tags                        = []
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
 
       primary_package {
         package_id           = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits.id : data.octopusdeploy_projects.audits.projects[0].id
@@ -390,16 +390,16 @@ resource "octopusdeploy_deployment_process" "orchestration" {
       is_required                        = false
       worker_pool_id                     = local.worker_pool_id
       properties                         = {
-        "Octopus.Action.Script.ScriptBody" = local.feedback_script
+        "Octopus.Action.Script.ScriptBody"   = local.feedback_script
         "Octopus.Action.Script.ScriptSource" = "Inline"
-        "Octopus.Action.Script.Syntax" = "PowerShell"
-        "Octopus.Action.RunOnServer" = "true"
+        "Octopus.Action.Script.Syntax"       = "PowerShell"
+        "Octopus.Action.RunOnServer"         = "true"
       }
-      environments                       = []
-      excluded_environments              = []
-      channels                           = []
-      tenant_tags                        = []
-      features                           = []
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
     }
 
     properties   = {}
