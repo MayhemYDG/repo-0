@@ -1,5 +1,14 @@
 #region Locals
 locals {
+  /*
+    You will need to edit:
+    * smoke_test_properties - depending on the step type, custom properties will need to be defined
+    * smoke_test_script - replace REPLACE THIS WITH CODE TO RETURN THE PUBLIC HOSTNAME with the appropriate logic
+    * cloud_account - this will need to be created in most cases
+    * security_scan_docker_script - the reference to the docker image deployed in earlier steps needs to be updated from #{Octopus.Action[Deploy Container].Package[web].PackageId}
+  */
+
+
   project_group_name                        = "<%= projectGroupName %>"
   infrastructure_project_name               = "<%= infrastructureProjectName %>"
   infrastructure_project_description        = "<%= infrastructureProjectDescription %>"
@@ -105,12 +114,15 @@ locals {
   fi
   echo "##octopus[stdout-default]"
 
+  DOCKERIMAGE=#{Octopus.Action[Deploy Container].Package[web].PackageId}
+  DOCKERTAG=#{Octopus.Action[Deploy Container].Package[web].PackageVersion}
+
   echo "Extracting Application Docker Image"
   echo "##octopus[stdout-verbose]"
   # Download and extract the docker image
   # https://manpages.ubuntu.com/manpages/jammy/man1/umoci-raw-unpack.1.html
   docker pull quay.io/skopeo/stable:latest 2>&1
-  docker run -v $(pwd):/output quay.io/skopeo/stable:latest copy docker://#{Octopus.Action[Deploy Container].Package[web].PackageId}:#{Octopus.Action[Deploy Container].Package[web].PackageVersion} oci:/output/image:latest 2>&1
+  docker run -v $(pwd):/output quay.io/skopeo/stable:latest copy docker://${DOCKERIMAGE}:${DOCKERTAG} oci:/output/image:latest 2>&1
   ./umoci unpack --image image --rootless bundle 2>&1
   echo "##octopus[stdout-default]"
 
