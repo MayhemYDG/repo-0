@@ -99,7 +99,7 @@ module.exports = class extends Generator {
       type: String,
       required: true,
       description:
-        "Options include Octopus.Script, Octopus.AwsRunScript, Octopus.GoogleCloudScripting, Octopus.AzurePowerShell"
+        "Options include Octopus.Script, Octopus.AwsRunScript, Octopus.GoogleCloudScripting, Octopus.AzurePowerShell, Octopus.KubernetesRunScript"
     });
   }
 
