@@ -185,7 +185,7 @@ data "octopusdeploy_projects" "audits" {
   take         = 1
 }
 
-resource "octopusdeploy_project" "frontend" {
+resource "octopusdeploy_project" "audits" {
   count                                = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
   name                                 = local.octopub_audits_project_name
   auto_create_release                  = false
