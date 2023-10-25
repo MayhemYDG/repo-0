@@ -87,7 +87,9 @@ module.exports = class extends Generator {
     });
     this.option("smokeTestContainerImage", {
       type: String,
-      required: true
+      required: true,
+      description:
+        "Pick an image from https://octopushq.atlassian.net/wiki/spaces/SE/pages/2713224189/Octopus+Labs+container+images to run the step in"
     });
     this.option("targetRole", {
       type: String,

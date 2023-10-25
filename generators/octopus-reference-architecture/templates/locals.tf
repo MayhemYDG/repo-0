@@ -37,8 +37,8 @@ locals {
   project_templates_project_group_id = length(data.octopusdeploy_project_groups.project_templates.project_groups) == 0 ? octopusdeploy_project_group.project_group_project_templates[0].id : data.octopusdeploy_project_groups.project_templates.project_groups[0].id
   application_lifecycle_id           = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_application[0].id : data.octopusdeploy_lifecycles.application.lifecycles[0].id
   smoke_test_container_image         = "<%= smokeTestContainerImage %>"
-  smoke_test_action_type         = "<%= smokeTestActionType %>"
-  target_role                    = "<%= targetRole %>"
+  smoke_test_action_type             = "<%= smokeTestActionType %>"
+  target_role                        = "<%= targetRole %>"
   feedback_script                    = <<-EOT
   Write-Highlight "Please share your feedback on this step in our [GitHub discussion](${local.feedback_link})."
   EOT
