@@ -38,11 +38,20 @@ locals {
   application_lifecycle_id           = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_application[0].id : data.octopusdeploy_lifecycles.application.lifecycles[0].id
   smoke_test_container_image         = "<%= smokeTestContainerImage %>"
   smoke_test_action_type             = "<%= smokeTestActionType %>"
-  target_role                        = "<%= targetRole %>"
-  feedback_script                    = <<-EOT
+  smoke_test_properties              = {
+    "Octopus.Action.RunOnServer"         = "true"
+    "Octopus.Action.Script.ScriptSource" = "Inline"
+    "Octopus.Action.Script.Syntax"       = "Bash"
+    "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
+    // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
+    //"OctopusUseBundledTooling": "False"
+    //"Octopus.Action.Azure.AccountId": local.cloud_account
+  }
+  target_role                 = "<%= targetRole %>"
+  feedback_script             = <<-EOT
   Write-Highlight "Please share your feedback on this step in our [GitHub discussion](${local.feedback_link})."
   EOT
-  smoke_test_script                  = <<-EOT
+  smoke_test_script           = <<-EOT
   for i in {1..30}
   do
     HOSTNAME=$(REPLACE THIS WITH CODE TO RETURN THE PUBLIC HOSTNAME)
@@ -80,7 +89,7 @@ locals {
       exit 1
   fi
   EOT
-  security_scan_docker_script        = <<-EOT
+  security_scan_docker_script = <<-EOT
   echo "Pulling Trivy Docker Image"
   echo "##octopus[stdout-verbose]"
   docker pull aquasec/trivy

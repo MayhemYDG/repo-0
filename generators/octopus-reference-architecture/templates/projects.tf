@@ -176,11 +176,7 @@ resource "octopusdeploy_deployment_process" "frontend" {
         "Octopus.Action.RunOnServer"         = "true"
         "Octopus.Action.Script.ScriptSource" = "Inline"
         "Octopus.Action.Script.Syntax"       = "Bash"
-        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
-        // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
-        //"OctopusUseBundledTooling": "False"
-        //"Octopus.Action.Azure.AccountId": local.cloud_account
-      }
+        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_properties
       container {
         feed_id = local.docker_hub_feed_id
         image   = local.smoke_test_container_image
@@ -337,15 +333,7 @@ resource "octopusdeploy_deployment_process" "products" {
       can_be_used_for_project_versioning = false
       is_required                        = false
       worker_pool_id                     = local.worker_pool_id
-      properties                         = {
-        "Octopus.Action.RunOnServer"         = "true"
-        "Octopus.Action.Script.ScriptSource" = "Inline"
-        "Octopus.Action.Script.Syntax"       = "Bash"
-        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
-        // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
-        //"OctopusUseBundledTooling": "False"
-        //"Octopus.Action.Azure.AccountId": local.cloud_account
-      }
+      properties                         = local.smoke_test_properties
       container {
         feed_id = local.docker_hub_feed_id
         image   = local.smoke_test_container_image
@@ -501,15 +489,7 @@ resource "octopusdeploy_deployment_process" "audits" {
       can_be_used_for_project_versioning = false
       is_required                        = false
       worker_pool_id                     = local.worker_pool_id
-      properties                         = {
-        "Octopus.Action.RunOnServer"         = "true"
-        "Octopus.Action.Script.ScriptSource" = "Inline"
-        "Octopus.Action.Script.Syntax"       = "Bash"
-        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
-        // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
-        //"OctopusUseBundledTooling": "False"
-        //"Octopus.Action.Azure.AccountId": local.cloud_account
-      }
+      properties                         = local.smoke_test_properties
       container {
         feed_id = local.docker_hub_feed_id
         image   = local.smoke_test_container_image
