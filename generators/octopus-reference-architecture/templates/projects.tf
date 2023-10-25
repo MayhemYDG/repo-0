@@ -1,8 +1,5 @@
 #region Projects
 data "octopusdeploy_projects" "infrastructure" {
-  cloned_from_project_id = ""
-  ids                    = []
-  is_clone               = true
   partial_name           = local.infrastructure_project_name
   skip                   = 0
   take                   = 1
@@ -18,7 +15,7 @@ resource "octopusdeploy_project" "infrastructure" {
   is_disabled                          = false
   is_version_controlled                = true
   lifecycle_id                         = local.devops_lifecycle_id
-  project_group_id                     = local.project_group_name
+  project_group_id                     = local.project_group_id
   included_library_variable_sets       = []
   tenanted_deployment_participation    = "Untenanted"
 
@@ -33,7 +30,7 @@ resource "octopusdeploy_project" "infrastructure" {
   }
 
   lifecycle {
-    ignore_changes = ["connectivity_policy"]
+    ignore_changes = [connectivity_policy]
   }
   description = local.infrastructure_project_description
 }
