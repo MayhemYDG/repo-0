@@ -6,6 +6,7 @@ locals {
     * smoke_test_script - replace REPLACE THIS WITH CODE TO RETURN THE PUBLIC HOSTNAME with the appropriate logic
     * cloud_account - this will need to be created in most cases
     * security_scan_docker_script - the reference to the docker image deployed in earlier steps needs to be updated from #{Octopus.Action[Deploy Container].Package[web].PackageId}
+    * octopusdeploy_deployment_process - each of the sample application deployment processes (there are 3 defined in this template) needs to have the actual deployment step added
   */
 
 
