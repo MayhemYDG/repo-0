@@ -19,7 +19,7 @@ locals {
   audits_health_check                       = "<%= auditsHealthCheck %>"
 
   // Use the example below for any accounts that might be included in this reference architecture
-  //aws_account                        = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_aws_account.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
+  //cloud_account                        = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_aws_account.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
 
   development_environment_id         = length(data.octopusdeploy_environments.environment_development.environments) == 0 ? octopusdeploy_environment.environment_development[0].id : data.octopusdeploy_environments.environment_development.environments[0].id
   test_environment_id                = length(data.octopusdeploy_environments.environment_test.environments) == 0 ? octopusdeploy_environment.environment_test[0].id : data.octopusdeploy_environments.environment_test.environments[0].id
