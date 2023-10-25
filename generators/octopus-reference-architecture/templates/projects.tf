@@ -178,6 +178,8 @@ resource "octopusdeploy_deployment_process" "frontend" {
         "Octopus.Action.Script.Syntax"       = "Bash"
         "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
         // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
+        //"OctopusUseBundledTooling": "False"
+        //"Octopus.Action.Azure.AccountId": local.azure_account
       }
       container {
         feed_id = local.docker_hub_feed_id
@@ -341,6 +343,8 @@ resource "octopusdeploy_deployment_process" "products" {
         "Octopus.Action.Script.Syntax"       = "Bash"
         "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
         // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
+        //"OctopusUseBundledTooling": "False"
+        //"Octopus.Action.Azure.AccountId": local.azure_account
       }
       container {
         feed_id = local.docker_hub_feed_id
@@ -503,6 +507,8 @@ resource "octopusdeploy_deployment_process" "audits" {
         "Octopus.Action.Script.Syntax"       = "Bash"
         "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
         // Depending on the step type, you'll likely need some additional properties here like an Azure or AWS account
+        //"OctopusUseBundledTooling": "False"
+        //"Octopus.Action.Azure.AccountId": local.azure_account
       }
       container {
         feed_id = local.docker_hub_feed_id
