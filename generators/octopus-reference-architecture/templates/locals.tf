@@ -14,6 +14,9 @@ locals {
   octopub_audits_project_description        = "<%= octopubAuditsProjectDescription %>"
   octopub_orchestration_project_name        = "<%= octopubOrchestrationProjectName %>"
   octopub_orchestration_project_description = "<%= octopubOrchestrationProjectDescription %>"
+  frontend_health_check                     = "<%= frontendHealthCheck %>"
+  products_health_check                     = "<%= productsHealthCheck %>"
+  audits_health_check                       = "<%= auditsHealthCheck %>"
 
   //aws_account                        = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_aws_account.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
 
@@ -34,6 +37,44 @@ locals {
   application_lifecycle_id           = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_application[0].id : data.octopusdeploy_lifecycles.application.lifecycles[0].id
   feedback_script                    = <<-EOT
   Write-Highlight "Please share your feedback on this step in our [GitHub discussion](${local.feedback_link})."
+  EOT
+  smoke_test_script                  = <<-EOT
+  for i in {1..30}
+  do
+    HOSTNAME=$(REPLACE THIS WITH CODE TO RETURN THE PUBLIC HOSTNAME)
+      if [[ -n "$${HOSTNAME}" ]]
+      then
+        break
+      fi
+      echo "Waiting for ingress hostname"
+      sleep 10
+  done
+
+
+  # Load balancers can take a minute or so before their DNS is propagated.
+  # A status code of 000 means curl could not resolve the DNS name, so we wait for a bit until DNS is updated.
+  echo "Testing http://$${HOSTNAME}#{App.HealthCheck}"
+  echo "Waiting for DNS to propagate. This can take a while for a new load balancer."
+  for i in {1..30}
+  do
+    CODE=$(curl -o /dev/null -s -w "%%{http_code}\n" http://$${HOSTNAME}#{App.HealthCheck})
+    if [[ "$${CODE}" == "200" ]]
+    then
+      break
+    fi
+    echo "Waiting for DNS name to be resolvable and for service to respond"
+    sleep 10
+  done
+
+  echo "response code: $${CODE}"
+  if [[ "$${CODE}" == "200" ]]
+  then
+      echo "success"
+      exit 0
+  else
+      echo "error"
+      exit 1
+  fi
   EOT
   security_scan_script               = <<-EOT
   echo "Pulling Trivy Docker Image"

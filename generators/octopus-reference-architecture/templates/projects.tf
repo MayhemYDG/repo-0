@@ -109,6 +109,17 @@ data "octopusdeploy_projects" "frontend" {
   take         = 1
 }
 
+resource "octopusdeploy_variable" "frontend_health_check" {
+  count        = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.frontend[0].id
+  value        = local.frontend_health_check
+  name         = "App.HealthCheck"
+  type         = "String"
+  description  = "The path to perform a health check on."
+  is_sensitive = false
+  depends_on   = []
+}
+
 resource "octopusdeploy_project" "frontend" {
   count                                = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
   name                                 = local.octopub_frontend_project_name
@@ -147,6 +158,17 @@ data "octopusdeploy_projects" "products" {
   take         = 1
 }
 
+resource "octopusdeploy_variable" "products_health_check" {
+  count        = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.products[0].id
+  value        = local.products_health_check
+  name         = "App.HealthCheck"
+  type         = "String"
+  description  = "The path to perform a health check on."
+  is_sensitive = false
+  depends_on   = []
+}
+
 resource "octopusdeploy_project" "products" {
   count                                = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
   name                                 = local.octopub_products_project_name
@@ -183,6 +205,17 @@ data "octopusdeploy_projects" "audits" {
   partial_name = local.octopub_audits_project_name
   skip         = 0
   take         = 1
+}
+
+resource "octopusdeploy_variable" "audits_healthcheck" {
+  count        = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.audits[0].id
+  value        = local.audits_health_check
+  name         = "App.HealthCheck"
+  type         = "String"
+  description  = "The path to perform a health check on."
+  is_sensitive = false
+  depends_on   = []
 }
 
 resource "octopusdeploy_project" "audits" {

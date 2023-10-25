@@ -42,6 +42,18 @@ module.exports = class extends Generator {
       type: String,
       required: true
     });
+    this.option("frontendHealthCheck", {
+      type: String,
+      required: true
+    });
+    this.option("productsHealthCheck", {
+      type: String,
+      required: true
+    });
+    this.option("auditsHealthCheck", {
+      type: String,
+      required: true
+    });
   }
 
   prompting() {
@@ -87,7 +99,10 @@ module.exports = class extends Generator {
         octopubOrchestrationProjectName: this.options
           .octopubOrchestrationProjectName,
         octopubOrchestrationProjectDescription: this.options
-          .octopubOrchestrationProjectDescription
+          .octopubOrchestrationProjectDescription,
+        frontendHealthCheck: this.options.frontendHealthCheck,
+        productsHealthCheck: this.options.productsHealthCheck,
+        auditsHealthCheck: this.options.auditsHealthCheck
       },
       null,
       {
