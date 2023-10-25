@@ -122,7 +122,7 @@ locals {
   # Download and extract the docker image
   # https://manpages.ubuntu.com/manpages/jammy/man1/umoci-raw-unpack.1.html
   docker pull quay.io/skopeo/stable:latest 2>&1
-  docker run -v $(pwd):/output quay.io/skopeo/stable:latest copy docker://${DOCKERIMAGE}:${DOCKERTAG} oci:/output/image:latest 2>&1
+  docker run -v $(pwd):/output quay.io/skopeo/stable:latest copy docker://$${DOCKERIMAGE}:$${DOCKERTAG} oci:/output/image:latest 2>&1
   ./umoci unpack --image image --rootless bundle 2>&1
   echo "##octopus[stdout-default]"
 
