@@ -97,7 +97,9 @@ module.exports = class extends Generator {
     });
     this.option("smokeTestActionType", {
       type: String,
-      required: true
+      required: true,
+      description:
+        "Options include Octopus.Script, Octopus.AwsRunScript, Octopus.GoogleCloudScripting, Octopus.AzurePowerShell"
     });
   }
 
