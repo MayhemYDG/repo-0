@@ -149,6 +149,119 @@ resource "octopusdeploy_project" "frontend" {
   }
   description = local.octopub_frontend_project_description
 }
+
+resource "octopusdeploy_deployment_process" "frontend" {
+  count      = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.frontend[0].id
+
+  // The deployment step goes here.
+  // Call the step "Deploy Container"
+
+  step {
+    condition           = "Success"
+    name                = "Smoke Test"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      name                               = "Smoke Test"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
+      }
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [local.target_role]
+  }
+
+  step {
+    condition           = "Success"
+    name                = "Security Scan"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Security Scan"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = "Always"
+    name                = "Feedback"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Feedback"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "PowerShell"
+        "Octopus.Action.Script.ScriptBody"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+
 #endregion
 
 #region Octopub Products Project
@@ -198,6 +311,118 @@ resource "octopusdeploy_project" "products" {
   }
   description = local.octopub_products_project_description
 }
+
+resource "octopusdeploy_deployment_process" "products" {
+  count      = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.products[0].id
+
+  // The deployment step goes here.
+  // Call the step "Deploy Container"
+
+  step {
+    condition           = "Success"
+    name                = "Smoke Test"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      name                               = "Smoke Test"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
+      }
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [local.target_role]
+  }
+
+  step {
+    condition           = "Success"
+    name                = "Security Scan"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Security Scan"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = "Always"
+    name                = "Feedback"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Feedback"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "PowerShell"
+        "Octopus.Action.Script.ScriptBody"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
 #endregion
 
 #region Octopub Audits Project
@@ -246,6 +471,118 @@ resource "octopusdeploy_project" "audits" {
     ignore_changes = [connectivity_policy]
   }
   description = local.octopub_audits_project_description
+}
+
+resource "octopusdeploy_deployment_process" "audits" {
+  count      = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.audits[0].id
+
+  // The deployment step goes here.
+  // Call the step "Deploy Container"
+
+  step {
+    condition           = "Success"
+    name                = "Smoke Test"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      name                               = "Smoke Test"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.smoke_test_script
+      }
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [local.target_role]
+  }
+
+  step {
+    condition           = "Success"
+    name                = "Security Scan"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Security Scan"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "Bash"
+        "Octopus.Action.Script.ScriptBody"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = "Always"
+    name                = "Feedback"
+    package_requirement = "LetOctopusDecide"
+    start_trigger       = "StartAfterPrevious"
+
+    action {
+      action_type                        = "Octopus.Script"
+      name                               = "Feedback"
+      condition                          = "Success"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        "Octopus.Action.RunOnServer"         = "true"
+        "Octopus.Action.Script.ScriptSource" = "Inline"
+        "Octopus.Action.Script.Syntax"       = "PowerShell"
+        "Octopus.Action.Script.ScriptBody"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
 }
 #endregion
 

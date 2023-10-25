@@ -18,6 +18,7 @@ locals {
   products_health_check                     = "<%= productsHealthCheck %>"
   audits_health_check                       = "<%= auditsHealthCheck %>"
 
+  // Use the example below for any accounts that might be included in this reference architecture
   //aws_account                        = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_aws_account.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
 
   development_environment_id         = length(data.octopusdeploy_environments.environment_development.environments) == 0 ? octopusdeploy_environment.environment_development[0].id : data.octopusdeploy_environments.environment_development.environments[0].id
@@ -35,6 +36,9 @@ locals {
   project_group_id                   = length(data.octopusdeploy_project_groups.ra.project_groups) == 0 ? octopusdeploy_project_group.project_group_ra[0].id : data.octopusdeploy_project_groups.ra.project_groups[0].id
   project_templates_project_group_id = length(data.octopusdeploy_project_groups.project_templates.project_groups) == 0 ? octopusdeploy_project_group.project_group_project_templates[0].id : data.octopusdeploy_project_groups.project_templates.project_groups[0].id
   application_lifecycle_id           = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_application[0].id : data.octopusdeploy_lifecycles.application.lifecycles[0].id
+  smoke_test_container_image         = "<%= smokeTestContainerImage %>"
+  smoke_test_action_type         = "<%= smokeTestActionType %>"
+  target_role                    = "<%= targetRole %>"
   feedback_script                    = <<-EOT
   Write-Highlight "Please share your feedback on this step in our [GitHub discussion](${local.feedback_link})."
   EOT
@@ -76,7 +80,7 @@ locals {
       exit 1
   fi
   EOT
-  security_scan_script               = <<-EOT
+  security_scan_docker_script        = <<-EOT
   echo "Pulling Trivy Docker Image"
   echo "##octopus[stdout-verbose]"
   docker pull aquasec/trivy

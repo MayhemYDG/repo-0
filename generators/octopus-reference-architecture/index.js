@@ -54,6 +54,18 @@ module.exports = class extends Generator {
       type: String,
       required: true
     });
+    this.option("smokeTestContainerImage", {
+      type: String,
+      required: true
+    });
+    this.option("targetRole", {
+      type: String,
+      required: true
+    });
+    this.option("smokeTestActionType", {
+      type: String,
+      required: true
+    });
   }
 
   prompting() {
@@ -102,7 +114,10 @@ module.exports = class extends Generator {
           .octopubOrchestrationProjectDescription,
         frontendHealthCheck: this.options.frontendHealthCheck,
         productsHealthCheck: this.options.productsHealthCheck,
-        auditsHealthCheck: this.options.auditsHealthCheck
+        auditsHealthCheck: this.options.auditsHealthCheck,
+        smokeTestContainerImage: this.options.smokeTestContainerImage,
+        targetRole: this.options.targetRole,
+        smokeTestActionType: this.options.smokeTestActionType
       },
       null,
       {
