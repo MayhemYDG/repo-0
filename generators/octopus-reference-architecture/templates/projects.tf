@@ -1,4 +1,6 @@
 #region Projects
+
+#region Infrastructure Project
 data "octopusdeploy_projects" "infrastructure" {
   partial_name           = local.infrastructure_project_name
   skip                   = 0
@@ -98,4 +100,123 @@ resource "octopusdeploy_runbook_process" "runbook_process_runbook_create_infrast
     target_roles = []
   }
 }
+#endregion
+
+#region Octopub Frontend Project
+data "octopusdeploy_projects" "frontend" {
+  partial_name           = local.octopub_frontend_project_name
+  skip                   = 0
+  take                   = 1
+}
+
+resource "octopusdeploy_project" "frontend" {
+  count                                = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  name                                 = local.octopub_frontend_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = "EnvironmentDefault"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = "Untenanted"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = false
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = "None"
+  }
+
+  versioning_strategy {
+    template = ""
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_frontend_project_description
+}
+#endregion
+
+#region Octopub Products Project
+data "octopusdeploy_projects" "products" {
+  partial_name           = local.octopub_products_project_name
+  skip                   = 0
+  take                   = 1
+}
+
+resource "octopusdeploy_project" "frontend" {
+  count                                = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  name                                 = local.octopub_products_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = "EnvironmentDefault"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = "Untenanted"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = false
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = "None"
+  }
+
+  versioning_strategy {
+    template = ""
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_products_project_description
+}
+#endregion
+
+#region Octopub Audits Project
+data "octopusdeploy_projects" "audits" {
+  partial_name           = local.octopub_audits_project_name
+  skip                   = 0
+  take                   = 1
+}
+
+resource "octopusdeploy_project" "frontend" {
+  count                                = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  name                                 = local.octopub_audits_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = "EnvironmentDefault"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = "Untenanted"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = false
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = "None"
+  }
+
+  versioning_strategy {
+    template = ""
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_audits_project_description
+}
+#endregion
+
+#region Octopub Orcestration Project
+#endregion
+
 #endregion

@@ -1,11 +1,19 @@
 #region Locals
 locals {
-  project_group_name                 = "<%= projectGroupName %>"
-  infrastructure_project_name        = "<%= infrastructureProjectName %>"
-  infrastructure_project_description = "<%= infrastructureProjectDescription %>"
-  infrastructure_runbook_name        = "<%= infrastructureRunbookName %>"
-  infrastructure_runbook_description = "<%= infrastructureRunbookDescription %>"
-  feedback_link                      = "<%= feedbackLink %>"
+  project_group_name                        = "<%= projectGroupName %>"
+  infrastructure_project_name               = "<%= infrastructureProjectName %>"
+  infrastructure_project_description        = "<%= infrastructureProjectDescription %>"
+  infrastructure_runbook_name               = "<%= infrastructureRunbookName %>"
+  infrastructure_runbook_description        = "<%= infrastructureRunbookDescription %>"
+  feedback_link                             = "<%= feedbackLink %>"
+  octopub_frontend_project_name             = "<%= octopubFrontendProjectName %>"
+  octopub_frontend_project_description      = "<%= octopubFrontendProjectDescription %>"
+  octopub_products_project_name             = "<%= octopubProductsProjectName %>"
+  octopub_products_project_description      = "<%= octopubProductsProjectDescription %>"
+  octopub_audits_project_name               = "<%= octopubAuditsProjectName %>"
+  octopub_audits_project_description        = "<%= octopubAuditsProjectDescription %>"
+  octopub_orchestration_project_name        = "<%= octopubOrchestrationProjectName %>"
+  octopub_orchestration_project_description = "<%= octopubOrchestrationProjectDescription %>"
 
   //aws_account                        = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_aws_account.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
 
