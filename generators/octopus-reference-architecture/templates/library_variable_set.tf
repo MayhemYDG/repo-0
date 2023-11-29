@@ -1,4 +1,9 @@
 #region Library Variable Sets
+
+# This section captures the details of space level resources in a library variable set. This allows things like
+# accounts, feeds, certificates etc to be recreated with octoterra.
+# Note these variables are not consumed by the "regular" runbooks or deployment steps.
+
 data "octopusdeploy_library_variable_sets" "space_resource_secrets" {
   partial_name = "Octopus Space Resources"
   skip         = 0
