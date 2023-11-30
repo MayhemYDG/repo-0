@@ -26,4 +26,16 @@ resource "octopusdeploy_variable" "docker_username" {
   owner_id     = octopusdeploy_library_variable_set.docker[0].id
   value        = var.feed_docker_hub_username
 }
+
+resource "octopusdeploy_variable" "docker_password" {
+  count           = length(data.octopusdeploy_library_variable_sets.docker.library_variable_sets) == 0 ? 1 : 0
+  name            = "Docker.Credentials.Password"
+  type            = "Sensitive"
+  description     = "The Docker password"
+  is_sensitive    = true
+  is_editable     = true
+  owner_id        = octopusdeploy_library_variable_set.docker[0].id
+  sensitive_value = var.feed_docker_hub_password
+}
+
 #endregion
