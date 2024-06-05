@@ -68,14 +68,15 @@ jobs:
           file: ./Dockerfile
           # Change this to "true" when you are sure the tag is unique. It is set to false
           # to ensure that existing images are not overwritten unintentionally.
-          push: false
+          push: true
           tags: <%= dockerImage %>:${{ steps.determine_version.outputs.semVer }}
 
-      - name: Create Octopus Release
-        uses: OctopusDeploy/create-release-action@v3
-        env:
-          OCTOPUS_API_KEY: "${{ secrets.OCTOPUS_API_TOKEN }}"
-          OCTOPUS_URL: "<%= octopusUrl %>"
-          OCTOPUS_SPACE: "<%= octopusSpace %>"
-        with:
-          project: "<%= octopusProject %>"
+       # Using feed triggers is preferable to manually creating releases.
+#      - name: Create Octopus Release
+#        uses: OctopusDeploy/create-release-action@v3
+#        env:
+#          OCTOPUS_API_KEY: "${{ secrets.OCTOPUS_API_TOKEN }}"
+#          OCTOPUS_URL: "<%= octopusUrl %>"
+#          OCTOPUS_SPACE: "<%= octopusSpace %>"
+#        with:
+#          project: "<%= octopusProject %>"
