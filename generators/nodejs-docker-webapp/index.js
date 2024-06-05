@@ -47,7 +47,8 @@ module.exports = class extends Generator {
         octopusUrl: this.options.octopusUrl,
         octopusSpace: this.options.octopusSpace,
         dockerImage: this.options.dockerImage,
-        octopusProject: this.options.octopusProject
+        octopusProject: this.options.octopusProject,
+        generated: Date.now()
       },
       null,
       {
