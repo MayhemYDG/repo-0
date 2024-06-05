@@ -23,6 +23,10 @@ jobs:
         run: npm install --global @cyclonedx/cyclonedx-npm
         shell: bash
 
+      - name: NPM install
+        run: npm install
+        shell: bash
+
       # This step generates a Source Bill of Materials (SBOM) package that captures all the dependencies compiled
       # into the application.
       - name: Generate SBOM
@@ -65,8 +69,6 @@ jobs:
           # to ensure that existing images are not overwritten unintentionally.
           push: true
           tags: <%= dockerImage %>:${{ steps.determine_version.outputs.semVer }}
-
-
 
        # Using feed triggers is preferable to manually creating releases.
 
