@@ -276,7 +276,7 @@ jobs:
       run: make test-component
     - continue-on-error: true
       name: Release snapshot
-      uses: goreleaser/goreleaser-action@v4
+      uses: goreleaser/goreleaser-action@v6
       with:
         args: release --snapshot --skip-publish --rm-dist
         version: v1.9.2
