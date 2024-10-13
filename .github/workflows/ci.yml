@@ -247,7 +247,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - continue-on-error: true
       uses: EmbarkStudios/cargo-deny-action@v1
       with:
@@ -504,7 +504,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - continue-on-error: true
       uses: actions/cache@v2
       with:
@@ -804,7 +804,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - continue-on-error: true
       uses: actions-rs/toolchain@v1.0.7
       with:
