@@ -251,7 +251,7 @@ jobs:
         persist-credentials: false
     - continue-on-error: true
       name: Use Node.js 16.x
-      uses: actions/setup-node@v3.1.1
+      uses: actions/setup-node@v4.0.4
       with:
         cache: yarn
         node-version: 16.x
