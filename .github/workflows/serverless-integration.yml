@@ -272,7 +272,7 @@ jobs:
         platforms: amd64,arm64
     - continue-on-error: true
       name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
     - continue-on-error: true
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.SERVERLESS_AWS_ACCESS_KEY_ID }}
