@@ -257,7 +257,7 @@ jobs:
         repository: aquasecurity/btfhub-archive
     - continue-on-error: true
       name: Install python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         cache: pip
         python-version: 3.8.10
