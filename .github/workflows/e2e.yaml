@@ -265,7 +265,7 @@ jobs:
       uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
     - continue-on-error: true
       name: Set up Nix
-      uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c
+      uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72
       with:
         extra_nix_config: 'access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
