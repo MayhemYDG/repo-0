@@ -655,7 +655,7 @@ jobs:
         path: docker.tar
     - continue-on-error: true
       name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@d710430a6722f083d3b36b8339ff66b32f22ee55
+      uses: aquasecurity/trivy-action@5681af892cd0f4997658e2bacc62bd0a894cf564
       with:
         format: sarif
         input: image
