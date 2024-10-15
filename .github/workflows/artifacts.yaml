@@ -275,7 +275,7 @@ jobs:
       run: nix develop --impure .#ci -c ${{ steps.build-command.outputs.value }}
     - continue-on-error: true
       name: Upload artifacts
-      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
       with:
         name: '[${{ github.job }}] Goreleaser output'
         path: 'build/dist/*.tar.gz
@@ -630,7 +630,7 @@ jobs:
     - continue-on-error: true
       if: matrix.variant == ''
       name: Upload image as artifact
-      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
       with:
         name: '[${{ github.job }}] OCI tarball'
         path: image.tar
@@ -649,7 +649,7 @@ jobs:
     - continue-on-error: true
       if: matrix.variant == ''
       name: Upload image as artifact
-      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
       with:
         name: '[${{ github.job }}] Docker tarball'
         path: docker.tar
@@ -663,7 +663,7 @@ jobs:
     - continue-on-error: true
       if: matrix.variant == ''
       name: Upload Trivy scan results as artifact
-      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
       with:
         name: '[${{ github.job }}] Trivy scan results'
         path: trivy-results.sarif
