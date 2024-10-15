@@ -760,7 +760,7 @@ jobs:
       with:
         go-version: 1.17
     - continue-on-error: true
-      uses: technote-space/get-diff-action@v5.0.2
+      uses: technote-space/get-diff-action@v6.1.2
       with:
         PATTERNS: '**/**.go
 
@@ -1035,7 +1035,7 @@ jobs:
     - continue-on-error: true
       uses: actions/checkout@v2.4.0
     - continue-on-error: true
-      uses: technote-space/get-diff-action@v5.0.2
+      uses: technote-space/get-diff-action@v6.1.2
       with:
         PATTERNS: '**/**.go
 
@@ -1304,7 +1304,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: technote-space/get-diff-action@v5.0.2
+      uses: technote-space/get-diff-action@v6.1.2
       with:
         PATTERNS: '**/**.go
 
@@ -1585,7 +1585,7 @@ jobs:
       with:
         go-version: 1.17
     - continue-on-error: true
-      uses: technote-space/get-diff-action@v5.0.2
+      uses: technote-space/get-diff-action@v6.1.2
       with:
         PATTERNS: '**/**.go
 
