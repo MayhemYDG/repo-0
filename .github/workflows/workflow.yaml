@@ -2217,7 +2217,7 @@ jobs:
       run: make native-test
     - continue-on-error: true
       name: Codecov Upload
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         fail_ci_if_error: false
         file: ./cover.out
