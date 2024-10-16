@@ -274,7 +274,7 @@ jobs:
     - continue-on-error: true
       id: scan_1
       name: Scan latest published image
-      uses: aquasecurity/trivy-action@8f4c7160b470bafe4299efdc1c8a1fb495f8325a
+      uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2
       with:
         exit-code: '1'
         format: json
@@ -292,7 +292,7 @@ jobs:
       id: scan_2
       if: steps.rebuild.outcome == 'success'
       name: Scan rebuilt image
-      uses: aquasecurity/trivy-action@8f4c7160b470bafe4299efdc1c8a1fb495f8325a
+      uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2
       with:
         format: json
         ignore-unfixed: true
@@ -329,7 +329,7 @@ jobs:
     - continue-on-error: true
       if: steps.rebuild.outcome == 'success'
       name: Describe vulnerabilities
-      uses: aquasecurity/trivy-action@8f4c7160b470bafe4299efdc1c8a1fb495f8325a
+      uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2
       with:
         format: table
         ignore-unfixed: true
