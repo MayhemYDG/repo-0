@@ -1050,7 +1050,7 @@ jobs:
       with:
         fetch-depth: 0
     - continue-on-error: true
-      uses: jupyterhub/action-k3s-helm@v1
+      uses: jupyterhub/action-k3s-helm@v4
       with:
         docker-enabled: true
         k3s-channel: ${{ matrix.k3s-channel }}
