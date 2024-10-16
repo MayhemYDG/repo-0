@@ -28,7 +28,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.5.0
-	github.com/xorcare/pointer v1.2.1
+	github.com/xorcare/pointer v1.2.2
 	github.com/yalue/native_endian v1.0.2
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 	gopkg.in/yaml.v2 v2.4.0
