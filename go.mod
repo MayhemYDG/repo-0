@@ -26,7 +26,7 @@ require (
 	github.com/norouter/norouter v0.6.4
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.5.0
 	github.com/xorcare/pointer v1.2.1
 	github.com/yalue/native_endian v1.0.2
