@@ -1086,7 +1086,7 @@ jobs:
         '
     - continue-on-error: true
       name: Await local ACME server
-      uses: jupyterhub/action-k8s-await-workloads@v1
+      uses: jupyterhub/action-k8s-await-workloads@v3
       with:
         max-restarts: 1
         timeout: 150
@@ -1144,7 +1144,7 @@ jobs:
     - continue-on-error: true
       if: matrix.test == 'upgrade'
       name: (Upgrade) Await ${{ matrix.upgrade-from }} chart
-      uses: jupyterhub/action-k8s-await-workloads@v1
+      uses: jupyterhub/action-k8s-await-workloads@v3
       with:
         max-restarts: 1
         timeout: 150
@@ -1171,7 +1171,7 @@ jobs:
         \ }}\n"
     - continue-on-error: true
       name: Await local chart
-      uses: jupyterhub/action-k8s-await-workloads@v1
+      uses: jupyterhub/action-k8s-await-workloads@v3
       with:
         max-restarts: 1
         timeout: 150
