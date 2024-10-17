@@ -2,6 +2,44 @@
 
 All notable changes to the LaunchDarkly PHP SDK will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org).
 
+## [6.3.0](https://github.com/MayhemYDG/repo-0/compare/v6.2.0...6.3.0) (2024-10-17)
+
+
+### Features
+
+* Add wrapper_name and wrapper_version configuration options ([#207](https://github.com/MayhemYDG/repo-0/issues/207)) ([9deddf0](https://github.com/MayhemYDG/repo-0/commit/9deddf08ebf2a0e55f5e214375de0667ecb2955c))
+* Redact anonymous attributes within feature events ([#193](https://github.com/MayhemYDG/repo-0/issues/193)) ([cdad89a](https://github.com/MayhemYDG/repo-0/commit/cdad89a38c9dbe16ae70ae2d260eab0471ec64f7))
+* Update to event schema v4 ([#192](https://github.com/MayhemYDG/repo-0/issues/192)) ([475727f](https://github.com/MayhemYDG/repo-0/commit/475727f634abeecbad9cf678618b95909c341af4))
+
+
+### Bug Fixes
+
+* Add missing name attribute ([207a9d9](https://github.com/MayhemYDG/repo-0/commit/207a9d9b1fc161e6996b8547392a4e25a668db8f))
+* **build:** Leverage .gitattributes to reduce package size ([#186](https://github.com/MayhemYDG/repo-0/issues/186)) ([b8cb035](https://github.com/MayhemYDG/repo-0/commit/b8cb03582b63cead74e45b50fa498380fb79cdd3))
+* Case mismatch in method call ([5567c1c](https://github.com/MayhemYDG/repo-0/commit/5567c1c088c9bed9bd6d4ed4f2626e3a170ce6ac))
+* Declare a single class per file ([9e9673d](https://github.com/MayhemYDG/repo-0/commit/9e9673d756a7d171e09a9480821763a6fb725404))
+* Install, do not update dependencies on PHP 5.5 ([edb0649](https://github.com/MayhemYDG/repo-0/commit/edb06497ff34b9307c47fc27dc83765647c9b210))
+* Keep packages sorted ([b2d02ea](https://github.com/MayhemYDG/repo-0/commit/b2d02ea05326de5993bd2a495ef416c0d0fe5363))
+* Move argument to method call ([a879def](https://github.com/MayhemYDG/repo-0/commit/a879defe10e55fb684424d4d641e0b7029bd074f))
+* Reinstall dependencies on PHP 5.5.38 ([7185136](https://github.com/MayhemYDG/repo-0/commit/71851368568ad43fa25864603d7cac0b70a5c000))
+* Remove noisy log message about missing guzzle cache middleware ([#196](https://github.com/MayhemYDG/repo-0/issues/196)) ([e850026](https://github.com/MayhemYDG/repo-0/commit/e85002653dadc95e36fd828301bdb8ffa31532e3))
+* Replace deprecated utf8_encode usage ([#201](https://github.com/MayhemYDG/repo-0/issues/201)) ([2c05c8d](https://github.com/MayhemYDG/repo-0/commit/2c05c8d909d57e2855cde9dde2588b4ee53ca828)), closes [#199](https://github.com/MayhemYDG/repo-0/issues/199)
+* Risky tests ([ae70ae7](https://github.com/MayhemYDG/repo-0/commit/ae70ae7ac325453f494b15e408f4daad765769a0))
+* Run 'composer cs' ([fa02eff](https://github.com/MayhemYDG/repo-0/commit/fa02eff5585c2a9694f0b75708ea781960ddcac9))
+* Use actual namespace for autoload-dev ([7db971a](https://github.com/MayhemYDG/repo-0/commit/7db971af06674ad6f7c02a8bbe0eeab429557fc3))
+
+
+### Miscellaneous Chores
+
+* add .sdk_metadata.json ([#204](https://github.com/MayhemYDG/repo-0/issues/204)) ([cc13724](https://github.com/MayhemYDG/repo-0/commit/cc137241688862ec5b821211c9c63b1fcb783f8d))
+* Fix package version in release please manifest ([#190](https://github.com/MayhemYDG/repo-0/issues/190)) ([cbdb529](https://github.com/MayhemYDG/repo-0/commit/cbdb5296569da112ec4d192c1d4805e7caf06c09))
+* **main:** release 6.0.1 ([#189](https://github.com/MayhemYDG/repo-0/issues/189)) ([263d02e](https://github.com/MayhemYDG/repo-0/commit/263d02e1594a757b06ef31a80334e4b8874dc113))
+* **main:** release 6.0.2 ([#198](https://github.com/MayhemYDG/repo-0/issues/198)) ([2a35991](https://github.com/MayhemYDG/repo-0/commit/2a35991eb84d8968d45e307257f9760d0e1932b9))
+* **main:** release 6.1.0 ([#202](https://github.com/MayhemYDG/repo-0/issues/202)) ([b129f99](https://github.com/MayhemYDG/repo-0/commit/b129f9985201063aae07ac3b4c6509cd35aba636))
+* **main:** release 6.2.0 ([#205](https://github.com/MayhemYDG/repo-0/issues/205)) ([0995278](https://github.com/MayhemYDG/repo-0/commit/0995278e8d1e1f6ae40f58b648fe5f666cdecb2a))
+* Remove EAP wording from changelog ([#172](https://github.com/MayhemYDG/repo-0/issues/172)) ([6d10258](https://github.com/MayhemYDG/repo-0/commit/6d102581d1b7c440fdfe543eaeb54dad30b0b8f7))
+* Update CODEOWNERS ([#181](https://github.com/MayhemYDG/repo-0/issues/181)) ([c8ca346](https://github.com/MayhemYDG/repo-0/commit/c8ca3468fc38c0abffe60e842ff021d0e968bcff))
+
 ## [6.2.0](https://github.com/launchdarkly/php-server-sdk/compare/6.1.0...6.2.0) (2024-06-11)
 
 
