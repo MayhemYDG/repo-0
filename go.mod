@@ -12,6 +12,6 @@ require (
 	github.com/facebookgo/subset v0.0.0-20200203212716-c811ad88dec4 // indirect
 	github.com/klauspost/compress v1.15.9
 	github.com/stretchr/testify v1.8.0
-	github.com/vmihailenco/msgpack/v5 v5.3.5
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 )
