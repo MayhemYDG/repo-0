@@ -245,7 +245,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5
+      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
     - continue-on-error: true
       name: Set up QEMU
       uses: docker/setup-qemu-action@27d0a4f181a40b142cce983c5393082c365d1480
@@ -510,7 +510,7 @@ jobs:
 
         sudo sh -c ''echo 1 > /proc/sys/net/ipv4/ip_forward'''
     - continue-on-error: true
-      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5
+      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871
     - continue-on-error: true
       name: check format
       run: make check_format
