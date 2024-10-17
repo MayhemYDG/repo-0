@@ -8,7 +8,7 @@ require (
 	github.com/coocood/freecache v1.2.4
 	github.com/envoyproxy/go-control-plane v0.11.1
 	github.com/golang/mock v1.6.0
-	github.com/golang/protobuf v1.5.3
+	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -28,7 +28,7 @@ require (
 	go.uber.org/zap v1.25.0
 	golang.org/x/net v0.19.0
 	google.golang.org/grpc v1.59.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
