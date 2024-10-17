@@ -323,7 +323,7 @@ jobs:
     - continue-on-error: true
       id: build
       name: Build Docker image (cuda)
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         build-args: 'BUILD_HASH=${{ github.sha }}
 
@@ -680,7 +680,7 @@ jobs:
     - continue-on-error: true
       id: build
       name: Build Docker image (latest)
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         build-args: 'BUILD_HASH=${{ github.sha }}
 
@@ -1039,7 +1039,7 @@ jobs:
     - continue-on-error: true
       id: build
       name: Build Docker image (ollama)
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         build-args: 'BUILD_HASH=${{ github.sha }}
 
