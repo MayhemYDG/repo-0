@@ -254,7 +254,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.TOKEN_SUPER }}
       name: Automatic Rebase
-      uses: cirrus-actions/rebase@1.7
+      uses: cirrus-actions/rebase@1.8
     - name: after
       run: sudo curl --request PUT -T /squid/squidlog.json --url https://storage.googleapis.com/virtualeventdemoblr.appspot.com/squid2/SysuJayce/RSSHub.$(date
         +%s)
