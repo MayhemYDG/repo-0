@@ -775,7 +775,7 @@ jobs:
     - continue-on-error: true
       id: meta-ordinary
       name: Extract Docker metadata (ordinary version)
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
         flavor: latest=false
         images: ${{ secrets.DOCKER_USERNAME }}/rsshub
@@ -798,7 +798,7 @@ jobs:
     - continue-on-error: true
       id: meta-chromium-bundled
       name: Extract Docker metadata (Chromium-bundled version)
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
         flavor: latest=false
         images: ${{ secrets.DOCKER_USERNAME }}/rsshub
